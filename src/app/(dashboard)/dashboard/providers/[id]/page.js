@@ -23,6 +23,7 @@ import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
 import BulkImportGrokCliModal from "./BulkImportGrokCliModal";
+import KeyAccessModal from "./KeyAccessModal";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
 
@@ -54,6 +55,7 @@ export default function ProviderDetailPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showEditNodeModal, setShowEditNodeModal] = useState(false);
   const [showBulkProxyModal, setShowBulkProxyModal] = useState(false);
+  const [showKeyAccessModal, setShowKeyAccessModal] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [modelAliases, setModelAliases] = useState({});
   const [customModels, setCustomModels] = useState([]);
@@ -1526,6 +1528,11 @@ export default function ProviderDetailPage() {
                 </Button>
               )}
               {connections.length > 0 && (
+                <Button size="sm" variant="secondary" icon="key" onClick={() => setShowKeyAccessModal(true)}>
+                  Key access
+                </Button>
+              )}
+              {connections.length > 0 && (
                 <>
                   {selectedConnectionIds.length > 0 && (
                     <Button
@@ -1922,6 +1929,13 @@ export default function ProviderDetailPage() {
           onClose={() => setShowAddCustomModel(false)}
         />
       )}
+
+      <KeyAccessModal
+        isOpen={showKeyAccessModal}
+        onClose={() => setShowKeyAccessModal(false)}
+        providerId={providerId}
+        connections={connections}
+      />
 
       {providerId === "codex" && (
         <BulkImportCodexModal
