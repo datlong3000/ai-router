@@ -73,3 +73,32 @@ export async function validateApiKey(key) {
   if (!row) return false;
   return row.isActive === 1 || row.isActive === true;
 }
+
+export async function getApiKeyByKey(key) {
+  if (!key) return null;
+  const db = await getAdapter();
+  return rowToKey(db.get(`SELECT * FROM apiKeys WHERE key = ?`, [key]));
+}
+
+// { [provider]: connectionId } pinned for this key
+export async function getKeyAccounts(apiKeyId) {
+  const db = await getAdapter();
+  const out = {};
+  for (const r of db.all(`SELECT provider, connectionId FROM apiKeyAccounts WHERE apiKeyId = ?`, [apiKeyId])) {
+    out[r.provider] = r.connectionId;
+  }
+  return out;
+}
+
+// Replace all mappings for the key; null/empty values dropped
+export async function setKeyAccounts(apiKeyId, map) {
+  const db = await getAdapter();
+  db.transaction(() => {
+    db.run(`DELETE FROM apiKeyAccounts WHERE apiKeyId = ?`, [apiKeyId]);
+    for (const [provider, connectionId] of Object.entries(map || {})) {
+      if (!connectionId) continue;
+      db.run(`INSERT INTO apiKeyAccounts(apiKeyId, provider, connectionId) VALUES(?, ?, ?)`, [apiKeyId, provider, connectionId]);
+    }
+  });
+  return getKeyAccounts(apiKeyId);
+}

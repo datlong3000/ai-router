@@ -23,6 +23,7 @@ vi.mock("@/sse/services/auth.js", () => ({
 vi.mock("@/lib/localDb", () => ({
   getSettings: mocks.getSettings,
   getCombos: mocks.getCombos,
+  getApiKeyByKey: async () => null,
 }));
 
 vi.mock("open-sse/handlers/fetch/index.js", () => ({
@@ -91,6 +92,7 @@ describe("web fetch account state", () => {
       "jina-reader",
       expect.any(Set),
       "webfetch:jina-reader",
+      { allowedConnectionIds: null },
     );
     expect(mocks.markAccountUnavailable).not.toHaveBeenCalled();
   });
