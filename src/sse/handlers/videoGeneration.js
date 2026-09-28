@@ -12,6 +12,7 @@ import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import * as log from "../utils/logger.js";
+import { getKeyAccountScope, keyRejectResponse, pinnedUnavailableResponse } from "../services/keyAccountRouting.js";
 
 // Video generation is xAI-only today; requests without a provider prefix
 // (bare model id, or multipart bodies we deliberately don't parse) land here.
@@ -44,7 +45,7 @@ const CREATE_ROTATION_STATUSES = new Set([
 async function requireValidApiKey(request) {
   const apiKey = extractApiKey(request);
   const settings = await getSettings();
-  if (settings.requireApiKey) {
+  if (settings.requireApiKey || settings.strictKeyAccountRouting) {
     if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
     const valid = await isValidApiKey(apiKey);
     if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
@@ -127,14 +128,19 @@ export async function handleVideoCreate(request, action) {
   const preferredConnectionId = request.headers.get("x-connection-id") || null;
   const idempotencyKey = request.headers.get("idempotency-key") || null;
 
+  // API key → account pinning (derived from the authenticated key only)
+  const keyScope = await getKeyAccountScope(extractApiKey(request), provider, await getSettings());
+  if (keyScope.reject) return keyRejectResponse(keyScope);
+
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId });
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId, allowedConnectionIds: keyScope.allowedConnectionIds });
 
     if (!credentials || credentials.allRateLimited) {
+      if (keyScope.allowedConnectionIds) return pinnedUnavailableResponse(keyScope);
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
@@ -203,8 +209,11 @@ export async function handleVideoGet(request, requestId) {
   const preferredConnectionId = request.headers.get("x-connection-id") || null;
   const provider = await resolveGetProvider(request, preferredConnectionId);
 
-  const credentials = await getProviderCredentials(provider, null, null, { preferredConnectionId });
+  const keyScope = await getKeyAccountScope(extractApiKey(request), provider, await getSettings());
+  if (keyScope.reject) return keyRejectResponse(keyScope);
+  const credentials = await getProviderCredentials(provider, null, null, { preferredConnectionId, allowedConnectionIds: keyScope.allowedConnectionIds });
   if (!credentials || credentials.allRateLimited) {
+    if (keyScope.allowedConnectionIds) return pinnedUnavailableResponse(keyScope);
     return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
   }
 

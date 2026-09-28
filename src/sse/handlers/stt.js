@@ -9,6 +9,7 @@ import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import * as log from "../utils/logger.js";
+import { getKeyAccountScope, keyRejectResponse, pinnedUnavailableResponse } from "../services/keyAccountRouting.js";
 
 // Providers requiring credentials for STT
 const CREDENTIALED_PROVIDERS = new Set(
@@ -46,8 +47,8 @@ export async function handleStt(request) {
   log.request("POST", `/v1/audio/transcriptions | ${modelStr}`);
 
   const settings = await getSettings();
-  if (settings.requireApiKey) {
-    const apiKey = extractApiKey(request);
+  const apiKey = extractApiKey(request);
+  if (settings.requireApiKey || settings.strictKeyAccountRouting) {
     if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
     const valid = await isValidApiKey(apiKey);
     if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
@@ -72,14 +73,19 @@ export async function handleStt(request) {
   }
 
   // Credentialed — fallback loop
+  // API key → account pinning (derived from the authenticated key only)
+  const keyScope = await getKeyAccountScope(apiKey, provider, await getSettings());
+  if (keyScope.reject) return keyRejectResponse(keyScope);
+
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { allowedConnectionIds: keyScope.allowedConnectionIds });
 
     if (!credentials || credentials.allRateLimited) {
+      if (keyScope.allowedConnectionIds) return pinnedUnavailableResponse(keyScope);
       if (credentials?.allRateLimited) {
         const msg = lastError || credentials.lastError || "Unavailable";
         const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;

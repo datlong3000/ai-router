@@ -9,6 +9,7 @@ import { getSettings } from "@/lib/localDb";
 import { PROVIDER_MODELS } from "@/shared/constants/models";
 import { GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS } from "open-sse/config/runtimeConfig.js";
 import { initTranslators } from "open-sse/translator/index.js";
+import { getKeyAccountScope, keyRejectResponse, pinnedUnavailableResponse } from "@/sse/services/keyAccountRouting.js";
 
 let initialized = false;
 const GEMINI_NATIVE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -179,7 +180,7 @@ function buildGeminiNativeUrl(requestUrl, model, action) {
 
 async function validateGeminiNativeClientKey(request) {
   const settings = await getSettings();
-  if (!settings.requireApiKey) return null;
+  if (!settings.requireApiKey && !settings.strictKeyAccountRouting) return null;
 
   const apiKey = extractGeminiClientApiKey(request);
   if (!apiKey) {
@@ -243,14 +244,17 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
   if (!GEMINI_NATIVE_MODEL_PATTERN.test(modelId)) {
     return Response.json({ error: { message: "Invalid model" } }, { status: 400 });
   }
+  const keyScope = await getKeyAccountScope(extractGeminiClientApiKey(request), "gemini", await getSettings());
+  if (keyScope.reject) return keyRejectResponse(keyScope);
   const excludeConnectionIds = new Set();
   const bodyText = JSON.stringify(body);
   let lastError = null;
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials("gemini", excludeConnectionIds, modelId);
+    const credentials = await getProviderCredentials("gemini", excludeConnectionIds, modelId, { allowedConnectionIds: keyScope.allowedConnectionIds });
     if (!credentials || credentials.allRateLimited) {
+      if (keyScope.allowedConnectionIds) return pinnedUnavailableResponse(keyScope);
       console.log(`[GEMINI_NATIVE] exhausted model=${modelId} status=${lastStatus || Number(credentials?.lastErrorCode) || 503} error=${lastError || credentials?.lastError || "No active credentials for provider: gemini"}`);
       return Response.json(
         { error: { message: lastError || credentials?.lastError || "No active credentials for provider: gemini" } },

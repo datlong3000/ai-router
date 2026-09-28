@@ -27,6 +27,9 @@ export default function APIPageClient({ machineId }) {
   const [confirmState, setConfirmState] = useState(null);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
+  const [strictKeyAccountRouting, setStrictKeyAccountRouting] = useState(false);
+  // Key → provider account pinning modal: { key, connections, accounts }
+  const [accountsModal, setAccountsModal] = useState(null);
   const [requireLogin, setRequireLogin] = useState(true);
   const [hasPassword, setHasPassword] = useState(true);
  const [tunnelDashboardAccess, setTunnelDashboardAccess] = useState(false);
@@ -201,6 +204,7 @@ export default function APIPageClient({ machineId }) {
       ]);
       if (settingsData) {
         setRequireApiKey(settingsData.requireApiKey || false);
+        setStrictKeyAccountRouting(settingsData.strictKeyAccountRouting || false);
         setRequireLogin(settingsData.requireLogin !== false);
         setHasPassword(settingsData.hasPassword || false);
         setTunnelDashboardAccess(settingsData.tunnelDashboardAccess || false);
@@ -242,6 +246,40 @@ export default function APIPageClient({ machineId }) {
       if (updated) setRequireApiKey(value);
     } catch (error) {
       console.log("Error updating requireApiKey:", error);
+    }
+  };
+
+  const handleStrictKeyAccountRouting = async (value) => {
+    try {
+      const updated = await useSettingsStore.getState().patchSettings({ strictKeyAccountRouting: value });
+      if (updated) setStrictKeyAccountRouting(value);
+    } catch (error) {
+      console.log("Error updating strictKeyAccountRouting:", error);
+    }
+  };
+
+  const openAccountsModal = async (key) => {
+    try {
+      const [connRes, accRes] = await Promise.all([fetch("/api/providers"), fetch(`/api/keys/${key.id}/accounts`)]);
+      const connections = connRes.ok ? (await connRes.json()).connections || [] : [];
+      const accounts = accRes.ok ? (await accRes.json()).accounts || {} : {};
+      setAccountsModal({ key, connections, accounts, error: "" });
+    } catch (error) {
+      console.log("Error loading key accounts:", error);
+    }
+  };
+
+  const saveAccountsModal = async () => {
+    try {
+      const res = await fetch(`/api/keys/${accountsModal.key.id}/accounts`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accounts: accountsModal.accounts }),
+      });
+      if (res.ok) setAccountsModal(null);
+      else setAccountsModal((m) => ({ ...m, error: "Failed to save" }));
+    } catch (error) {
+      console.log("Error saving key accounts:", error);
     }
   };
 
@@ -980,6 +1018,19 @@ export default function APIPageClient({ machineId }) {
           />
         </div>
 
+        <div className="flex items-center justify-between pb-4 mb-4 border-b border-border">
+          <div>
+            <p className="font-medium">Strict key → account routing</p>
+            <p className="text-sm text-text-muted">
+              Every request needs a key with an assigned account for the requested provider
+            </p>
+          </div>
+          <Toggle
+            checked={strictKeyAccountRouting}
+            onChange={() => handleStrictKeyAccountRouting(!strictKeyAccountRouting)}
+          />
+        </div>
+
         {isRemoteHost && !requireApiKey && (
           <div className="mb-4 -mt-2">
             <SecurityWarning message="Endpoint is exposed without an API key." />
@@ -1056,6 +1107,14 @@ export default function APIPageClient({ machineId }) {
                     title={key.isActive ? "Pause key" : "Resume key"}
                   />
                   <button
+                    onClick={() => openAccountsModal(key)}
+                    className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
+                    title="Assign provider accounts"
+                    aria-label="Assign provider accounts"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">account_tree</span>
+                  </button>
+                  <button
                     onClick={() => handleDeleteKey(key.id)}
                     className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
                   >
@@ -1067,6 +1126,44 @@ export default function APIPageClient({ machineId }) {
           </div>
         )}
       </Card>
+
+      {/* Key → provider account modal */}
+      <Modal
+        isOpen={!!accountsModal}
+        title={`Accounts for "${accountsModal?.key?.name || ""}"`}
+        onClose={() => setAccountsModal(null)}
+      >
+        {accountsModal && (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-text-muted">
+              Pin one account per provider. Once any account is pinned, this key can only use pinned providers — no fallback to other accounts.
+            </p>
+            {[...new Set(accountsModal.connections.map((c) => c.provider))].sort().map((provider) => (
+              <label key={provider} className="flex items-center justify-between gap-3 text-sm">
+                <span className="font-medium">{provider}</span>
+                <select
+                  className="bg-transparent border border-border rounded px-2 py-1 max-w-[60%]"
+                  value={accountsModal.accounts[provider] || ""}
+                  onChange={(e) => setAccountsModal((m) => ({ ...m, accounts: { ...m.accounts, [provider]: e.target.value || null } }))}
+                >
+                  <option value="">None (unassigned)</option>
+                  {accountsModal.connections.filter((c) => c.provider === provider).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name || c.email || c.id.slice(0, 8)}{c.isActive === false ? " (disabled)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
+            {accountsModal.connections.length === 0 && <p className="text-sm text-text-muted">No provider accounts yet.</p>}
+            {accountsModal.error && <p className="text-sm text-red-500">{accountsModal.error}</p>}
+            <div className="flex gap-2">
+              <Button onClick={saveAccountsModal} fullWidth>Save</Button>
+              <Button onClick={() => setAccountsModal(null)} variant="ghost" fullWidth>Cancel</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Add Key Modal */}
       <Modal
