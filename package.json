@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --port 20127",
+    "dev:lan": "next dev --port 20128 --hostname 0.0.0.0",
     "dev:webpack": "next dev --webpack --port 20127",
     "build": "next build --webpack",
     "postbuild": "node scripts/copy-standalone-assets.mjs",
