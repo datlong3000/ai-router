@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Modal, Button } from "@/shared/components";
+import { Modal, Button, Tooltip } from "@/shared/components";
 import { sessionWeekly, timeLeft, timeToEmpty } from "./quotaWindows";
 import { median } from "@/lib/keyRoutingPlan.js";
 
@@ -27,10 +27,22 @@ function QuotaGauge({ windows, now }) {
     return { x: W / 2 - r * Math.cos(t), y: cy - r * Math.sin(t) };
   })() : null;
   const weeklyEmpty = weekly ? timeToEmpty(weekly, now) : null;
-  const tip = windows.map((w) => `${w.name}: ${Math.round(w.remaining)}% left${w.resetAt ? `, resets in ${timeLeft(w.resetAt, now)} (${new Date(w.resetAt).toLocaleString()})` : ""}`).join("\n")
-    + (weeklyEmpty != null ? `\nweekly runs out in ~${timeLeft(now + weeklyEmpty, now)} at current pace` : "");
+  const tip = windows.map((w) => `${w.name} ${Math.round(w.remaining)}%${w.resetAt ? ` ${timeLeft(w.resetAt, now)}` : ""}`).join(", ");
+  const tipBody = (
+    <div className="space-y-0.5 tabular-nums">
+      {windows.map((w) => (
+        <div key={w.name} className="flex gap-2">
+          <span className="capitalize w-14">{w.name}</span>
+          <b style={{ color: quotaColor(w.remaining) }}>{Math.round(w.remaining)}%</b>
+          {w.resetAt && <span className="ml-auto">⟳ {timeLeft(w.resetAt, now)}</span>}
+        </div>
+      ))}
+      {weeklyEmpty != null && <div className="text-red-400">Weekly runs out in ~{timeLeft(now + weeklyEmpty, now)}</div>}
+    </div>
+  );
   return (
-    <div className="flex flex-col items-center w-fit" title={tip}>
+    <Tooltip text={tipBody} position="bottom">
+    <div className="flex flex-col items-center w-fit cursor-help">
       <svg width={W} height={cy + stroke / 2 + 1} viewBox={`0 0 ${W} ${cy + stroke / 2 + 1}`} role="img" aria-label={tip}>
         <path d={arc} fill="none" stroke="currentColor" strokeOpacity="0.12" strokeWidth={stroke} strokeLinecap="round" />
         {weekly && (
@@ -50,6 +62,7 @@ function QuotaGauge({ windows, now }) {
           : session?.resetAt ? <span className="text-text-muted">⟳ {timeLeft(session.resetAt, now)}</span> : null}
       </div>
     </div>
+    </Tooltip>
   );
 }
 
