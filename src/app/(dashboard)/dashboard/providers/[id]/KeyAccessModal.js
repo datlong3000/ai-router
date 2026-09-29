@@ -12,13 +12,14 @@ const HEAVY_X = 2; // key is "heavy" above HEAVY_X × team median
 const fmt = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(Math.round(n || 0)));
 const quotaColor = (r) => (r < LOW_QUOTA ? "#ef4444" : r < 50 ? "#f59e0b" : "#22c55e");
 
-// Half-circle gauge. Arc = weekly % left; ● on the arc = how far the week has elapsed
+// Half-circle gauge. Arc = weekly % left; pill on the arc = week elapsed, labelled with weekly reset (3d/5h)
 // (arc end left of ● → burning faster than the week allows). Big number = session % left.
 // One line below: session reset countdown, plus ⚠ when weekly runs out before its reset (details in tooltip).
 function QuotaGauge({ windows, now }) {
   const session = windows.find((w) => w.name === "session");
   const weekly = windows.find((w) => w.name === "weekly");
-  const W = 88, r = 38, stroke = 7, cy = 44;
+  // W leaves room for the weekly-reset pill at the arc ends
+  const W = 104, r = 38, stroke = 7, cy = 46;
   const arc = `M ${W / 2 - r} ${cy} A ${r} ${r} 0 0 1 ${W / 2 + r} ${cy}`;
   // Fraction of the weekly window still ahead → dot sits at (1 − elapsed) along the "remaining" scale
   const weekLeft = weekly?.resetAt ? Math.min(1, Math.max(0, (new Date(weekly.resetAt) - now) / weekly.windowMs)) : null;
@@ -49,7 +50,19 @@ function QuotaGauge({ windows, now }) {
           <path d={arc} fill="none" stroke={quotaColor(weekly.remaining)} strokeWidth={stroke} strokeLinecap="round"
             pathLength="100" strokeDasharray={`${Math.max(0, weekly.remaining)} 100`} />
         )}
-        {dot && <circle cx={dot.x} cy={dot.y} r={stroke / 2 + 1} className="fill-text-main" stroke="var(--color-surface, #fff)" strokeWidth="1.5" />}
+        {dot && (() => {
+          // Pill on the week-elapsed marker: largest unit of weekly reset ("3d", "5h", "40m")
+          const label = timeLeft(weekly.resetAt, now).split(" ")[0];
+          const pw = label.length * 5.5 + 8, ph = 12;
+          return (
+            <g aria-hidden="true">
+              <rect x={dot.x - pw / 2} y={dot.y - ph / 2} width={pw} height={ph} rx={ph / 2}
+                className="fill-text-main" stroke="var(--color-surface, #fff)" strokeWidth="1.5" />
+              <text x={dot.x} y={dot.y} dominantBaseline="central" textAnchor="middle" fontSize="8.5" fontWeight="700"
+                style={{ fill: "var(--color-bg, #111)" }}>{label}</text>
+            </g>
+          );
+        })()}
         {session && (
           <text x={W / 2} y={cy - 4} textAnchor="middle" fontSize="16" fontWeight="700" fill={quotaColor(session.remaining)}>
             {Math.round(session.remaining)}%
