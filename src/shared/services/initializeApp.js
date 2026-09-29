@@ -113,6 +113,12 @@ async function runHeavyStartup() {
       .catch((e) => console.log("[AutoPing] scheduler start failed:", e.message));
   }
 
+  if (Object.values(settings.keyAutoBalance || {}).some((s) => s?.everyH)) {
+    import("@/lib/keyAutoBalance.js")
+      .then(({ configureKeyAutoBalance }) => configureKeyAutoBalance(settings))
+      .catch((e) => console.log("[AutoBalance] scheduler start failed:", e.message));
+  }
+
   // Proactive OAuth token refresh (e.g. grok-cli ~6h TTL). Module is idempotent
   // and also started from custom-server.js when that entry is used.
   import("@/sse/services/backgroundTokenRefresh.js")

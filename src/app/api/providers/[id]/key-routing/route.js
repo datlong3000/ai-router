@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getApiKeys, getKeyAccounts, getProviderConnections, getSettings, updateSettings } from "@/lib/localDb";
 import { getKeyUsage } from "@/lib/keyRoutingUsage.js";
+import { AUTO_EVERY_H, setAutoBalanceEvery } from "@/lib/keyAutoBalance.js";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,7 @@ export async function GET(_request, { params }) {
 
     return NextResponse.json({
       fallback: !!settings.keyAccountFallback?.[providerId],
+      auto: settings.keyAutoBalance?.[providerId] || null,
       keys: out,
       accounts: connections.map((c) => ({
         id: c.id, name: c.name || c.email || c.id.slice(0, 8), isActive: c.isActive !== false,
@@ -38,7 +40,7 @@ export async function GET(_request, { params }) {
   }
 }
 
-// PATCH /api/providers/[id]/key-routing - body { fallback: boolean }
+// PATCH /api/providers/[id]/key-routing - body { fallback?: boolean, autoEveryH?: 1|3|6|24|null }
 // Pinned keys of this provider fall back to other accounts (Connections priority) when the pin is unavailable.
 export async function PATCH(request, { params }) {
   try {
@@ -48,6 +50,12 @@ export async function PATCH(request, { params }) {
       return NextResponse.json({ error: "Invalid provider" }, { status: 400 });
     }
     const body = await request.json().catch(() => null);
+    if (body && "autoEveryH" in body) {
+      if (body.autoEveryH !== null && !AUTO_EVERY_H.includes(body.autoEveryH)) {
+        return NextResponse.json({ error: `autoEveryH must be null or one of ${AUTO_EVERY_H.join(", ")}` }, { status: 400 });
+      }
+      return NextResponse.json({ auto: await setAutoBalanceEvery(providerId, body.autoEveryH) });
+    }
     if (typeof body?.fallback !== "boolean") {
       return NextResponse.json({ error: "fallback must be a boolean" }, { status: 400 });
     }
