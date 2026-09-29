@@ -30,6 +30,7 @@ export function sessionWeekly(quotas) {
 // ms until the window hits 0% at its average burn pace so far, only if that lands before resetAt; else null.
 // Pace = % used / time elapsed in the window (window start = resetAt − windowMs).
 export function timeToEmpty(w, now = Date.now()) {
+  if (!w?.resetAt) return null; // new Date(null) is epoch, not NaN
   const resetMs = new Date(w?.resetAt).getTime();
   if (!Number.isFinite(resetMs) || !w.windowMs) return null;
   const elapsed = w.windowMs - (resetMs - now);
@@ -37,6 +38,23 @@ export function timeToEmpty(w, now = Date.now()) {
   if (elapsed <= 0 || used <= 0) return null;
   const empty = w.remaining / (used / elapsed);
   return empty < resetMs - now ? empty : null;
+}
+
+const MIN_ELAPSED_MS = 10 * 60000; // pace is noise before this much of the window has passed
+
+// Runway estimate for one window at its average pace so far.
+// { state: "early" } too little data · { state: "ok", pace } lasts until reset · { state: "out", ms, pace } empties first.
+// pace = % used / % of window elapsed (1 = exactly on budget).
+export function runway(w, now = Date.now()) {
+  if (!w?.resetAt) return null;
+  const resetMs = new Date(w?.resetAt).getTime();
+  if (!Number.isFinite(resetMs) || !w.windowMs) return null;
+  const elapsed = w.windowMs - (resetMs - now);
+  if (elapsed < MIN_ELAPSED_MS) return { state: "early" };
+  const used = 100 - w.remaining;
+  const pace = used / ((elapsed / w.windowMs) * 100);
+  const ms = timeToEmpty(w, now);
+  return ms != null ? { state: "out", ms, pace } : { state: "ok", pace };
 }
 
 // "2h 13m" / "3d 4h" until resetAt, or null
