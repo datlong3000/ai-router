@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Modal, Button, Tooltip } from "@/shared/components";
-import { sessionWeekly, timeLeft, timeToEmpty } from "./quotaWindows";
+import { sessionWeekly, timeLeft, timeToEmpty, runway } from "./quotaWindows";
 import { median } from "@/lib/keyRoutingPlan.js";
 
 const UNASSIGNED = "";
@@ -42,6 +42,7 @@ function QuotaGauge({ windows, now }) {
     </div>
   );
   return (
+    <div className="flex items-center gap-3">
     <Tooltip text={tipBody} position="bottom">
     <div className="flex flex-col items-center w-fit cursor-help">
       <svg width={W} height={cy + stroke / 2 + 1} viewBox={`0 0 ${W} ${cy + stroke / 2 + 1}`} role="img" aria-label={tip}>
@@ -85,6 +86,28 @@ function QuotaGauge({ windows, now }) {
       </div>
     </div>
     </Tooltip>
+    <RunwayList windows={windows} now={now} />
+    </div>
+  );
+}
+
+// Beside the gauge: will each window last until its reset at the current pace?
+function RunwayList({ windows, now }) {
+  const rows = windows.map((w) => ({ w, rw: runway(w, now) })).filter((x) => x.rw);
+  if (!rows.length) return null;
+  return (
+    <ul className="text-xs tabular-nums space-y-1">
+      {rows.map(({ w, rw }) => (
+        <li key={w.name} className="flex items-center gap-2"
+          title={rw.state === "early" ? "Too early in the window to estimate"
+            : `${rw.pace.toFixed(1)}× pace · resets in ${timeLeft(w.resetAt, now)}`}>
+          <span className="text-text-muted w-12">{w.name === "session" ? "Session" : "Week"}</span>
+          {rw.state === "early" ? <span className="text-text-muted">—</span>
+            : rw.state === "out" ? <b className="text-red-500">~{timeLeft(now + rw.ms, now)}</b>
+            : <b className="text-green-500">✓</b>}
+        </li>
+      ))}
+    </ul>
   );
 }
 
