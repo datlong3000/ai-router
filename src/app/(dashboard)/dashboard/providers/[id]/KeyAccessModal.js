@@ -181,43 +181,39 @@ export default function KeyAccessModal({ isOpen, onClose, providerId }) {
     <Modal isOpen={isOpen} onClose={onClose} title="API key access" size="full">
       <div className="flex flex-wrap items-center gap-3 mb-3">
         <div className="flex-1 min-w-60 text-sm">
-          <div className="text-text-muted">Drag an API key onto an account to pin it for this provider.</div>
-          <div className="text-xs mt-0.5">
-            Team median <b className="tabular-nums">{fmt(teamMedian)}</b> tok/24h
-            {heavyCount > 0 && <> · <span className="text-orange-500">{heavyCount} heavy key(s)</span> (&gt;{HEAVY_X}× median)</>}
-          </div>
+          <span className="text-text-muted" title="Team median, last 24h">median <b className="tabular-nums text-text-main">{fmt(teamMedian)}</b></span>
+          {heavyCount > 0 && <span className="text-orange-500" title={`>${HEAVY_X}× median`}> · {heavyCount} heavy</span>}
         </div>
         <label className="flex items-center gap-2 text-sm cursor-pointer" title="Pinned account first; if it is disabled, rate-limited or failing, try the other accounts in Connections priority order.">
           <input type="checkbox" role="switch" className="sr-only peer" checked={!!data.fallback} disabled={saving} onChange={toggleFallback} />
           <span className="relative w-9 h-5 rounded-full bg-border peer-checked:bg-primary transition-colors after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4 peer-focus-visible:ring-2 peer-focus-visible:ring-primary" />
-          Fallback by priority
+          Fallback
         </label>
         <Button size="sm" variant="secondary" onClick={suggest} disabled={saving || !data.accounts.length}>Suggest</Button>
       </div>
 
       {data.fallback && (
         <p className="text-xs text-orange-500 mb-2">
-          Fallback on: pinned keys may use any account of this provider when their pin is unavailable. Pinning no longer isolates cost per account.
+          Fallback on: pinned keys may use other accounts.
         </p>
       )}
       {!data.fallback && strandedAccounts.map((a) => (
         <p key={a.id} className="text-sm text-red-500 mb-2" role="alert">
-          {keysIn(a.id).length} key(s) pinned to disabled account <b>{a.name}</b> will fail. Move them or turn on fallback.
+          <b>{a.name}</b> disabled: {keysIn(a.id).length} keys will fail.
         </p>
       ))}
       {error && <p className="text-sm text-red-500 mb-3" role="alert">{error}</p>}
 
       {suggestion && (
         <div className="mb-3 rounded-lg border border-border p-3 text-sm">
-          <p className="text-xs text-text-muted mb-2">Based on last-24h key usage and each account&apos;s weekly quota left.</p>
           <ul className="mb-2 text-xs space-y-0.5">
             {suggestion.accounts.map((a) => (
-              <li key={a.id} className="tabular-nums">
-                {nameOf(a.id)}: {a.keys} key(s), carries {Math.round(a.loadShare * 100)}% of load (target {Math.round(a.targetShare * 100)}%)
+              <li key={a.id} className="tabular-nums" title="load share / target (24h usage vs weekly quota left)">
+                {nameOf(a.id)}: {Math.round(a.loadShare * 100)}% / {Math.round(a.targetShare * 100)}%
               </li>
             ))}
           </ul>
-          {changes.length === 0 ? <p>Current assignment is already balanced.</p> : (
+          {changes.length === 0 ? <p>Balanced.</p> : (
             <ul className="mb-2 space-y-1">
               {changes.map((c) => {
                 const k = data.keys.find((x) => x.id === c.keyId);
@@ -251,7 +247,7 @@ export default function KeyAccessModal({ isOpen, onClose, providerId }) {
                 <span className={`truncate ${zone.isActive ? "" : "opacity-60"}`}>{zone.name}</span>
                 {!zone.isActive && <span className="text-xs text-red-500">disabled</span>}
               </div>
-              <div className="text-xs text-text-muted mb-2">{inZone.length} key(s) · {fmt(zoneTokens)} tok</div>
+              {inZone.length > 0 && <div className="text-xs text-text-muted mb-2">{inZone.length} · {fmt(zoneTokens)}</div>}
               {zone.id && (
                 <div className="mb-3">
                   {q === undefined ? <div className="text-xs text-text-muted">Loading quota…</div>
@@ -301,7 +297,6 @@ export default function KeyAccessModal({ isOpen, onClose, providerId }) {
           );
         })}
       </div>
-      <p className="text-xs text-text-muted mt-2">▏ marker = team median · order = Connections priority · hover a key for req/cost</p>
     </Modal>
   );
 }
