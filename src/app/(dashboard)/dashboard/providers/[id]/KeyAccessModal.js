@@ -18,8 +18,8 @@ const quotaColor = (r) => (r < LOW_QUOTA ? "#ef4444" : r < 50 ? "#f59e0b" : "#22
 function QuotaGauge({ windows, now }) {
   const session = windows.find((w) => w.name === "session");
   const weekly = windows.find((w) => w.name === "weekly");
-  // W leaves room for the weekly-reset pill at the arc ends
-  const W = 104, r = 38, stroke = 7, cy = 46;
+  // W/cy leave room for the weekly-reset pill and weekly % label around the arc
+  const W = 112, r = 38, stroke = 7, cy = 54;
   const arc = `M ${W / 2 - r} ${cy} A ${r} ${r} 0 0 1 ${W / 2 + r} ${cy}`;
   // Fraction of the weekly window still ahead → dot sits at (1 − elapsed) along the "remaining" scale
   const weekLeft = weekly?.resetAt ? Math.min(1, Math.max(0, (new Date(weekly.resetAt) - now) / weekly.windowMs)) : null;
@@ -50,6 +50,16 @@ function QuotaGauge({ windows, now }) {
           <path d={arc} fill="none" stroke={quotaColor(weekly.remaining)} strokeWidth={stroke} strokeLinecap="round"
             pathLength="100" strokeDasharray={`${Math.max(0, weekly.remaining)} 100`} />
         )}
+        {weekly && (() => {
+          // Weekly % (number only) just outside the end of the coloured arc
+          const t = Math.PI * Math.min(1, Math.max(0, weekly.remaining / 100));
+          const ro = r + stroke / 2 + 6;
+          const x = W / 2 - ro * Math.cos(t), y = cy - ro * Math.sin(t);
+          return (
+            <text x={x} y={Math.min(y, cy - 2)} dominantBaseline="central" textAnchor="middle" fontSize="9" fontWeight="700"
+              fill={quotaColor(weekly.remaining)} aria-hidden="true">{Math.round(weekly.remaining)}</text>
+          );
+        })()}
         {dot && (() => {
           // Pill on the week-elapsed marker: largest unit of weekly reset ("3d", "5h", "40m")
           const label = timeLeft(weekly.resetAt, now).split(" ")[0];
