@@ -1934,7 +1934,6 @@ export default function ProviderDetailPage() {
         isOpen={showKeyAccessModal}
         onClose={() => setShowKeyAccessModal(false)}
         providerId={providerId}
-        connections={connections}
       />
 
       {providerId === "codex" && (

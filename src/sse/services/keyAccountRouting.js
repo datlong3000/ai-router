@@ -27,7 +27,12 @@ export async function resolveKeyAccount({ apiKey, provider, strict = false }) {
 export async function getKeyAccountScope(apiKey, provider, settings) {
   const route = await resolveKeyAccount({ apiKey, provider, strict: !!settings?.strictKeyAccountRouting });
   if (route.mode === "reject") return { reject: route };
-  return { allowedConnectionIds: route.mode === "pinned" ? new Set([route.connectionId]) : null };
+  if (route.mode !== "pinned") return { allowedConnectionIds: null, pinnedFirst: null };
+  // Per-provider fallback: pinned account first, then the rest of the pool in Connections priority order
+  if (settings?.keyAccountFallback?.[resolveProviderId(provider)]) {
+    return { allowedConnectionIds: null, pinnedFirst: route.connectionId };
+  }
+  return { allowedConnectionIds: new Set([route.connectionId]), pinnedFirst: null };
 }
 
 // Pinned key whose account is gone/disabled/locked/failed: fixed 403, never try another account

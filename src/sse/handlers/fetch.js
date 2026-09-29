@@ -170,7 +170,7 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
   const fetchLockKey = `webfetch:${providerId}`;
 
   while (true) {
-    const credentials = await getProviderCredentials(providerId, excludeConnectionIds, fetchLockKey, { allowedConnectionIds: keyScope.allowedConnectionIds });
+    const credentials = await getProviderCredentials(providerId, excludeConnectionIds, fetchLockKey, { allowedConnectionIds: keyScope.allowedConnectionIds, pinnedFirst: keyScope.pinnedFirst });
 
     if (!credentials || credentials.allRateLimited) {
       if (keyScope.allowedConnectionIds) return pinnedUnavailableResponse(keyScope);

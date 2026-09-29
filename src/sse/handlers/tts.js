@@ -90,7 +90,7 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { allowedConnectionIds: keyScope.allowedConnectionIds });
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { allowedConnectionIds: keyScope.allowedConnectionIds, pinnedFirst: keyScope.pinnedFirst });
 
     if (!credentials || credentials.allRateLimited) {
       if (keyScope.allowedConnectionIds) return pinnedUnavailableResponse(keyScope);
