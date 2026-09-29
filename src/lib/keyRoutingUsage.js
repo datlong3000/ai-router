@@ -1,9 +1,10 @@
 import { getAdapter } from "@/lib/db/driver.js";
 
-export const PERIOD_MS = { "24h": 86400000, "7d": 604800000 };
+const DAY_MS = 86400000;
 
-// { [keyId]: { req, tokens, cost, byAccount } } for one provider since `since`. Raw keys stay server-side.
-export async function getKeyUsage(providerId, since, keys, connIds) {
+// { [keyId]: { req, tokens, cost, byAccount } } for one provider over the last 24h. Raw keys stay server-side.
+export async function getKeyUsage(providerId, keys, connIds, now = Date.now()) {
+  const since = new Date(now - DAY_MS).toISOString();
   const db = await getAdapter();
   const idByKey = new Map(keys.map((k) => [k.key, k.id]));
   const rows = db.all(

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getApiKeys, getKeyAccounts, getProviderConnections } from "@/lib/localDb";
 import { planKeyAssignment, capacityOf } from "@/lib/keyRoutingPlan.js";
-import { getKeyUsage, PERIOD_MS } from "@/lib/keyRoutingUsage.js";
+import { getKeyUsage } from "@/lib/keyRoutingUsage.js";
 import { GET as getConnectionUsage } from "@/app/api/usage/[connectionId]/route.js";
 
 export const dynamic = "force-dynamic";
@@ -29,14 +29,13 @@ async function weeklyQuota(connectionId) {
 // GET /api/providers/[id]/key-routing/suggest
 // Rebalance plan: key load = last-24h tokens, account capacity = weekly quota left;
 // load share per account ∝ capacity, minimal pin moves. Read-only.
-export async function GET(request, { params }) {
+export async function GET(_request, { params }) {
   try {
     const { id: providerId } = await params;
-    const period = "24h";
     const [allKeys, connections] = await Promise.all([getApiKeys(), getProviderConnections({ provider: providerId })]);
     const active = connections.filter((c) => c.isActive !== false);
     const keys = allKeys.filter((k) => k.isActive);
-    const usage = await getKeyUsage(providerId, new Date(Date.now() - PERIOD_MS[period]).toISOString(), keys, new Set(connections.map((c) => c.id)));
+    const usage = await getKeyUsage(providerId, keys, new Set(connections.map((c) => c.id)));
 
     const [quotas, pinList] = await Promise.all([
       Promise.all(active.map((c) => weeklyQuota(c.id))),
@@ -53,7 +52,7 @@ export async function GET(request, { params }) {
       .filter(([kid, cid]) => pins[kid] !== cid)
       .map(([keyId, to]) => ({ keyId, from: pins[keyId] || null, to }));
 
-    return NextResponse.json({ period, changes, accounts: plan.accounts });
+    return NextResponse.json({ changes, accounts: plan.accounts });
   } catch (error) {
     console.log("Error building key routing suggestion:", error);
     return NextResponse.json({ error: "Failed to build suggestion" }, { status: 500 });

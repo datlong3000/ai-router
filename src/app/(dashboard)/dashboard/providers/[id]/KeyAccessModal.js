@@ -55,7 +55,6 @@ function QuotaGauge({ windows, now }) {
 
 // Drag API keys into account zones: pins each key to one account of this provider.
 export default function KeyAccessModal({ isOpen, onClose, providerId }) {
-  const [period, setPeriod] = useState("7d");
   const [data, setData] = useState({ keys: [], accounts: [], usage: {}, fallback: false });
   const [quota, setQuota] = useState({}); // connId -> { windows: [{name:"session"|"weekly", remaining, resetAt, windowMs}], remaining }
   const [suggestion, setSuggestion] = useState(null);
@@ -72,7 +71,7 @@ export default function KeyAccessModal({ isOpen, onClose, providerId }) {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`/api/providers/${providerId}/key-routing?period=${period}`);
+      const res = await fetch(`/api/providers/${providerId}/key-routing`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Load failed");
       setData(json);
@@ -80,7 +79,7 @@ export default function KeyAccessModal({ isOpen, onClose, providerId }) {
     } catch (e) {
       setError(e.message || "Failed to load API keys");
     }
-  }, [providerId, period]);
+  }, [providerId]);
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { if (isOpen) load(); }, [isOpen, load]);
@@ -171,7 +170,7 @@ export default function KeyAccessModal({ isOpen, onClose, providerId }) {
         <div className="flex-1 min-w-60 text-sm">
           <div className="text-text-muted">Drag an API key onto an account to pin it for this provider.</div>
           <div className="text-xs mt-0.5">
-            Team median <b className="tabular-nums">{fmt(teamMedian)}</b> tok/{period}
+            Team median <b className="tabular-nums">{fmt(teamMedian)}</b> tok/24h
             {heavyCount > 0 && <> · <span className="text-orange-500">{heavyCount} heavy key(s)</span> (&gt;{HEAVY_X}× median)</>}
           </div>
         </div>
@@ -180,12 +179,6 @@ export default function KeyAccessModal({ isOpen, onClose, providerId }) {
           <span className="relative w-9 h-5 rounded-full bg-border peer-checked:bg-primary transition-colors after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4 peer-focus-visible:ring-2 peer-focus-visible:ring-primary" />
           Fallback by priority
         </label>
-        <div className="flex rounded-md border border-border overflow-hidden text-xs" role="group" aria-label="Usage period">
-          {["24h", "7d"].map((p) => (
-            <button key={p} type="button" onClick={() => setPeriod(p)} aria-pressed={period === p}
-              className={`px-2 py-1 ${period === p ? "bg-primary text-white" : ""}`}>{p}</button>
-          ))}
-        </div>
         <Button size="sm" variant="secondary" onClick={suggest} disabled={saving || !data.accounts.length}>Suggest</Button>
       </div>
 

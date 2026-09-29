@@ -1,9 +1,9 @@
 // Key routing dashboard (spec 2026-09-29): AC tests for GET /api/providers/[id]/key-routing
 // AC1 keys masked, raw key never returned
 // AC2 pins reported for this provider only
-// AC3 usage aggregated per key × account, scoped to provider + period
+// AC3 usage aggregated per key × account, scoped to provider, last 24h only
 // AC4 usage from other providers' accounts excluded from byAccount
-// AC5 period param: 24h vs 7d, invalid → 7d
+// AC5 window fixed at 24h: older rows ignored, period param ignored
 // AC6 keys with no usage still listed (load 0)
 import fs from "node:fs";
 import os from "node:os";
@@ -13,9 +13,9 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 const originalDataDir = process.env.DATA_DIR;
 let tempDir, db, route, k1, k2, k3, accA, accB, accX;
 
-const call = async (provider, period) => {
+const call = async (provider, query = "") => {
   const res = await route.GET(
-    new Request(`http://localhost/api/providers/${provider}/key-routing${period ? `?period=${period}` : ""}`),
+    new Request(`http://localhost/api/providers/${provider}/key-routing${query}`),
     { params: Promise.resolve({ id: provider }) }
   );
   return { status: res.status, body: await res.json() };
@@ -46,9 +46,9 @@ beforeAll(async () => {
 
   const H = 3600000;
   await insert(k1.key, accA.id, "openai", ago(1 * H), 100, 50);       // in 24h
-  await insert(k1.key, accB.id, "openai", ago(2 * 24 * H), 200, 0);   // 7d only
+  await insert(k1.key, accB.id, "openai", ago(23 * H), 200, 0);       // in 24h
   await insert(k1.key, accX.id, "anthropic", ago(1 * H), 999, 999);   // other provider
-  await insert(k2.key, accA.id, "openai", ago(10 * 24 * H), 500, 0);  // outside 7d
+  await insert(k2.key, accA.id, "openai", ago(25 * H), 500, 0);       // just outside 24h
   await insert("sk-unknown-raw", accA.id, "openai", ago(1 * H), 7, 7); // deleted key
 });
 
@@ -75,15 +75,14 @@ describe("GET /api/providers/[id]/key-routing", () => {
     expect(body.accounts.map((a) => a.id).sort()).toEqual([accA.id, accB.id].sort());
   });
 
-  it("AC3+AC5 aggregates per key × account within 7d by default", async () => {
+  it("AC3 aggregates per key × account within 24h", async () => {
     const { body } = await call("openai");
-    expect(body.period).toBe("7d");
     const u = body.usage[k1.id];
     expect(u.req).toBe(2);
     expect(u.tokens).toBe(350);
     expect(u.byAccount[accA.id].tokens).toBe(150);
     expect(u.byAccount[accB.id].tokens).toBe(200);
-    expect(body.usage[k2.id]).toBeUndefined(); // 10d old
+    expect(body.usage[k2.id]).toBeUndefined(); // 25h old
   });
 
   it("AC4 excludes other provider traffic", async () => {
@@ -93,10 +92,11 @@ describe("GET /api/providers/[id]/key-routing", () => {
     expect(anth.usage[k1.id].tokens).toBe(1998);
   });
 
-  it("AC5 24h narrows window; invalid period falls back to 7d", async () => {
-    const { body } = await call("openai", "24h");
-    expect(body.usage[k1.id].tokens).toBe(150);
-    expect((await call("openai", "'; DROP TABLE x;--")).body.period).toBe("7d");
+  it("AC5 window is fixed at 24h; period param is ignored", async () => {
+    const { body } = await call("openai", "?period=7d");
+    expect(body.usage[k1.id].tokens).toBe(350);
+    expect(body.usage[k2.id]).toBeUndefined();
+    expect("period" in body).toBe(false);
   });
 
   it("AC6 lists keys without usage", async () => {

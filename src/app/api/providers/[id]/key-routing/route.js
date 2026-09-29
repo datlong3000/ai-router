@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getApiKeys, getKeyAccounts, getProviderConnections, getSettings, updateSettings } from "@/lib/localDb";
-import { getKeyUsage, PERIOD_MS } from "@/lib/keyRoutingUsage.js";
+import { getKeyUsage } from "@/lib/keyRoutingUsage.js";
 
 export const dynamic = "force-dynamic";
 
@@ -8,18 +8,16 @@ function mask(key) {
   return key && key.length > 12 ? key.slice(0, 8) + "***" + key.slice(-4) : "***";
 }
 
-// GET /api/providers/[id]/key-routing?period=7d
+// GET /api/providers/[id]/key-routing (usage = last 24h)
 // Keys (masked), pins for this provider, and per-key × account usage. Raw keys never leave the server.
-export async function GET(request, { params }) {
+export async function GET(_request, { params }) {
   try {
     const { id: providerId } = await params;
-    const period = new URL(request.url).searchParams.get("period") === "24h" ? "24h" : "7d";
-    const since = new Date(Date.now() - PERIOD_MS[period]).toISOString();
 
     const [keys, connections, settings] = await Promise.all([
       getApiKeys(), getProviderConnections({ provider: providerId }), getSettings(),
     ]);
-    const usage = await getKeyUsage(providerId, since, keys, new Set(connections.map((c) => c.id)));
+    const usage = await getKeyUsage(providerId, keys, new Set(connections.map((c) => c.id)));
 
     const out = await Promise.all(keys.map(async (k) => ({
       id: k.id, name: k.name, masked: mask(k.key), isActive: k.isActive,
@@ -27,7 +25,6 @@ export async function GET(request, { params }) {
     })));
 
     return NextResponse.json({
-      period,
       fallback: !!settings.keyAccountFallback?.[providerId],
       keys: out,
       accounts: connections.map((c) => ({
