@@ -135,4 +135,43 @@ describe("keyAccountRouting", () => {
     await db.deleteProviderConnection(conn.id);
     expect(await db.getKeyAccounts(k2.id)).toEqual({});
   });
+  // Fallback toggle (spec 2026-09-29): AC-F1..F4
+  const fscope = (key, fb) => routing.getKeyAccountScope(key, 'openai', { keyAccountFallback: fb ? { openai: true } : {} });
+
+  it('F1. fallback off → unchanged strict pin', async () => {
+    const s = await fscope(keyA1.key, false);
+    expect([...s.allowedConnectionIds]).toEqual([accA.id]);
+    expect(s.pinnedFirst).toBeNull();
+  });
+
+  it('F2. fallback on → pinned account used first even if lower priority', async () => {
+    await db.setKeyAccounts(keyA2.id, { openai: accB.id });
+    const s = await fscope(keyA2.key, true);
+    expect(s.allowedConnectionIds).toBeNull();
+    const creds = await auth.getProviderCredentials('openai', null, 'gpt-4o', { pinnedFirst: s.pinnedFirst });
+    expect(creds.connectionId).toBe(accB.id);
+    await db.setKeyAccounts(keyA2.id, { openai: accA.id });
+  });
+
+  it('F3. fallback on + pinned excluded/disabled → next by Connections priority', async () => {
+    const s = await fscope(keyA1.key, true);
+    const creds = await auth.getProviderCredentials('openai', new Set([accA.id]), 'gpt-4o', { pinnedFirst: s.pinnedFirst });
+    expect(creds.connectionId).toBe(accB.id);
+    await db.updateProviderConnection(accA.id, { isActive: false });
+    const c2 = await auth.getProviderCredentials('openai', null, 'gpt-4o', { pinnedFirst: s.pinnedFirst });
+    expect(c2.connectionId).toBe(accB.id);
+  });
+
+  it('F4. fallback on → chat retries A then B on 429 (no 403)', async () => {
+    await db.updateSettings({ keyAccountFallback: { openai: true } });
+    const res = await chat.handleChat(req(keyA1.key, 'openai/gpt-4o-mini'));
+    expect(res.status).not.toBe(403);
+    expect(coreCalls).toEqual([accA.id, accB.id]);
+    await db.updateSettings({ keyAccountFallback: {} });
+  });
+
+  it('F5. fallback scoped per provider: other provider stays strict', async () => {
+    const s = await routing.getKeyAccountScope(keyA1.key, 'openai', { keyAccountFallback: { anthropic: true } });
+    expect([...s.allowedConnectionIds]).toEqual([accA.id]);
+  });
 }, 60000);

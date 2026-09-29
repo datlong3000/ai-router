@@ -92,7 +92,7 @@ export async function handleSystemone(request) {
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { allowedConnectionIds: keyScope.allowedConnectionIds });
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { allowedConnectionIds: keyScope.allowedConnectionIds, pinnedFirst: keyScope.pinnedFirst });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {

@@ -104,4 +104,15 @@ describe("GET /api/providers/[id]/key-routing", () => {
     expect(body.keys.find((k) => k.id === k3.id)).toBeTruthy();
     expect(body.usage[k3.id]).toBeUndefined();
   });
+
+  it('AC7 PATCH fallback toggles per provider and validates input', async () => {
+    const patch = (id, body) => route.PATCH(new Request('http://x', { method: 'PATCH', body: JSON.stringify(body) }), { params: Promise.resolve({ id }) });
+    expect((await patch('openai', { fallback: 'yes' })).status).toBe(400);
+    expect((await patch('__proto__', { fallback: true })).status).toBe(400);
+    expect((await patch('openai', { fallback: true })).status).toBe(200);
+    expect((await call('openai')).body.fallback).toBe(true);
+    expect((await call('anthropic')).body.fallback).toBe(false);
+    await patch('openai', { fallback: false });
+    expect((await call('openai')).body.fallback).toBe(false);
+  });
 });

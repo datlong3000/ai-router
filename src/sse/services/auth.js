@@ -149,6 +149,11 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         log.info("AUTH", `${provider} | pinned to ${connection.id?.slice(0, 8)} (${connection.name || connection.email || "unnamed"})`);
       }
     }
+    // Key pinned with fallback on: pinned account first, else strict priority order (ignores round-robin)
+    if (!connection && options?.pinnedFirst) {
+      connection = availableConnections.find((c) => c.id === options.pinnedFirst) || availableConnections[0];
+      log.info("AUTH", `${provider} | key pin ${options.pinnedFirst.slice(0, 8)} → using ${connection.id?.slice(0, 8)} (priority fallback)`);
+    }
     if (connection) {
       // skip strategy
     } else if (strategy === "round-robin") {

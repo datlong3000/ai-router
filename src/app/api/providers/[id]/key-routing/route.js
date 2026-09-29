@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getApiKeys, getKeyAccounts, getProviderConnections } from "@/lib/localDb";
+import { getApiKeys, getKeyAccounts, getProviderConnections, getSettings, updateSettings } from "@/lib/localDb";
 import { getAdapter } from "@/lib/db/driver.js";
 
 export const dynamic = "force-dynamic";
@@ -18,8 +18,8 @@ export async function GET(request, { params }) {
     const period = new URL(request.url).searchParams.get("period") === "24h" ? "24h" : "7d";
     const since = new Date(Date.now() - PERIOD_MS[period]).toISOString();
 
-    const [keys, connections, db] = await Promise.all([
-      getApiKeys(), getProviderConnections({ provider: providerId }), getAdapter(),
+    const [keys, connections, db, settings] = await Promise.all([
+      getApiKeys(), getProviderConnections({ provider: providerId }), getAdapter(), getSettings(),
     ]);
     const connIds = new Set(connections.map((c) => c.id));
     const idByKey = new Map(keys.map((k) => [k.key, k.id]));
@@ -46,6 +46,7 @@ export async function GET(request, { params }) {
 
     return NextResponse.json({
       period,
+      fallback: !!settings.keyAccountFallback?.[providerId],
       keys: out,
       accounts: connections.map((c) => ({
         id: c.id, name: c.name || c.email || c.id.slice(0, 8), isActive: c.isActive !== false,
@@ -55,5 +56,29 @@ export async function GET(request, { params }) {
   } catch (error) {
     console.log("Error fetching key routing:", error);
     return NextResponse.json({ error: "Failed to fetch key routing" }, { status: 500 });
+  }
+}
+
+// PATCH /api/providers/[id]/key-routing - body { fallback: boolean }
+// Pinned keys of this provider fall back to other accounts (Connections priority) when the pin is unavailable.
+export async function PATCH(request, { params }) {
+  try {
+    const { id: providerId } = await params;
+    // providerId becomes an object key in settings: block prototype keys / junk
+    if (!/^[a-z0-9][\w.-]{0,63}$/i.test(providerId) || ["__proto__", "constructor", "prototype"].includes(providerId)) {
+      return NextResponse.json({ error: "Invalid provider" }, { status: 400 });
+    }
+    const body = await request.json().catch(() => null);
+    if (typeof body?.fallback !== "boolean") {
+      return NextResponse.json({ error: "fallback must be a boolean" }, { status: 400 });
+    }
+    const current = (await getSettings()).keyAccountFallback || {};
+    const next = { ...current, [providerId]: body.fallback };
+    if (!body.fallback) delete next[providerId];
+    await updateSettings({ keyAccountFallback: next });
+    return NextResponse.json({ fallback: body.fallback });
+  } catch (error) {
+    console.log("Error updating key routing fallback:", error);
+    return NextResponse.json({ error: "Failed to update fallback" }, { status: 500 });
   }
 }

@@ -96,7 +96,7 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId, allowedConnectionIds: keyScope.allowedConnectionIds });
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId, allowedConnectionIds: keyScope.allowedConnectionIds, pinnedFirst: keyScope.pinnedFirst });
 
     if (!credentials || credentials.allRateLimited) {
       if (keyScope.allowedConnectionIds) return pinnedUnavailableResponse(keyScope);

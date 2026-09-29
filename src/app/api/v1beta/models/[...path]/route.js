@@ -252,7 +252,7 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials("gemini", excludeConnectionIds, modelId, { allowedConnectionIds: keyScope.allowedConnectionIds });
+    const credentials = await getProviderCredentials("gemini", excludeConnectionIds, modelId, { allowedConnectionIds: keyScope.allowedConnectionIds, pinnedFirst: keyScope.pinnedFirst });
     if (!credentials || credentials.allRateLimited) {
       if (keyScope.allowedConnectionIds) return pinnedUnavailableResponse(keyScope);
       console.log(`[GEMINI_NATIVE] exhausted model=${modelId} status=${lastStatus || Number(credentials?.lastErrorCode) || 503} error=${lastError || credentials?.lastError || "No active credentials for provider: gemini"}`);

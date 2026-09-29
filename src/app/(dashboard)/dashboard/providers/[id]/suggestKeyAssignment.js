@@ -20,10 +20,40 @@ export function suggestKeyAssignment(keys, accounts) {
   return out;
 }
 
+export function median(values) {
+  if (!values.length) return 0;
+  const s = [...values].sort((a, b) => a - b);
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+// Remaining % for one quota window, or null
+export function windowRemaining(q) {
+  if (!q || q.unlimited) return null;
+  if (Number.isFinite(q.remainingPercentage)) return q.remainingPercentage;
+  if (!Number.isFinite(q.remaining)) return null;
+  return q.total && q.total !== 100 ? (q.remaining / q.total) * 100 : q.remaining;
+}
+
+// One ring per model: "MiniMax-M2 (5h)" + "MiniMax-M2 (7d)" → { name:"MiniMax-M2", remaining:min, windows:[...] }.
+// Keys without a "(window)" suffix (session/weekly…) stay one group each.
+export function groupQuotaByModel(quotas) {
+  const groups = new Map();
+  for (const [key, q] of Object.entries(quotas || {})) {
+    const remaining = windowRemaining(q);
+    if (remaining == null) continue;
+    const m = key.match(/^(.*?)\s*\(([^)]+)\)$/);
+    const name = m ? m[1] : key;
+    const g = groups.get(name) || { name, remaining: 100, resetAt: null, windows: [] };
+    g.windows.push({ label: m ? m[2] : key, remaining, resetAt: q.resetAt || null });
+    if (remaining <= g.remaining) { g.remaining = remaining; g.resetAt = q.resetAt || null; }
+    groups.set(name, g);
+  }
+  return [...groups.values()].sort((a, b) => a.remaining - b.remaining);
+}
+
 // Lowest remaining % across a /api/usage/[connectionId] quotas object, or null if none.
 export function minRemaining(quotas) {
-  const vals = Object.values(quotas || {})
-    .filter((q) => q && !q.unlimited && Number.isFinite(q.remaining ?? q.remainingPercentage))
-    .map((q) => (q.total && q.total !== 100 ? (q.remaining / q.total) * 100 : (q.remaining ?? q.remainingPercentage)));
+  const vals = Object.values(quotas || {}).map(windowRemaining).filter((v) => v != null);
   return vals.length ? Math.min(...vals) : null;
 }

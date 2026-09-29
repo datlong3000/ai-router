@@ -137,7 +137,7 @@ export async function handleVideoCreate(request, action) {
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId, allowedConnectionIds: keyScope.allowedConnectionIds });
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId, allowedConnectionIds: keyScope.allowedConnectionIds, pinnedFirst: keyScope.pinnedFirst });
 
     if (!credentials || credentials.allRateLimited) {
       if (keyScope.allowedConnectionIds) return pinnedUnavailableResponse(keyScope);
@@ -211,7 +211,7 @@ export async function handleVideoGet(request, requestId) {
 
   const keyScope = await getKeyAccountScope(extractApiKey(request), provider, await getSettings());
   if (keyScope.reject) return keyRejectResponse(keyScope);
-  const credentials = await getProviderCredentials(provider, null, null, { preferredConnectionId, allowedConnectionIds: keyScope.allowedConnectionIds });
+  const credentials = await getProviderCredentials(provider, null, null, { preferredConnectionId, allowedConnectionIds: keyScope.allowedConnectionIds, pinnedFirst: keyScope.pinnedFirst });
   if (!credentials || credentials.allRateLimited) {
     if (keyScope.allowedConnectionIds) return pinnedUnavailableResponse(keyScope);
     return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
