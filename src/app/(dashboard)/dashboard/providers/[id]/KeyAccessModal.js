@@ -213,7 +213,26 @@ export default function KeyAccessModal({ isOpen, onClose, providerId }) {
     setSuggestion(null);
   });
 
+  const setAutoEvery = (everyH) => run(async () => {
+    const res = await fetch(`/api/providers/${providerId}/key-routing`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ autoEveryH: everyH }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || "Save failed");
+  });
+
+  const undoAuto = () => run(async () => {
+    const res = await fetch(`/api/providers/${providerId}/key-routing/auto`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "undo" }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || "Undo failed");
+  });
+
   const nameOf = (id) => data.accounts.find((a) => a.id === id)?.name || "Unassigned";
+  const keyName = (id) => data.keys.find((k) => k.id === id)?.name || id.slice(0, 8);
   const keysIn = (zoneId) => data.keys.filter((k) => (k.pinned || UNASSIGNED) === zoneId)
     .sort((a, b) => tokensOf(b.id) - tokensOf(a.id));
   const unassigned = keysIn(UNASSIGNED);
@@ -234,8 +253,37 @@ export default function KeyAccessModal({ isOpen, onClose, providerId }) {
           <span className="relative w-9 h-5 rounded-full bg-border peer-checked:bg-primary transition-colors after:absolute after:top-0.5 after:left-0.5 after:size-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4 peer-focus-visible:ring-2 peer-focus-visible:ring-primary" />
           Fallback
         </label>
-        <Button size="sm" variant="secondary" onClick={suggest} disabled={saving || !data.accounts.length}>Suggest</Button>
+        <div className="flex items-stretch rounded-md border border-border overflow-hidden text-sm">
+          <button type="button" onClick={suggest} disabled={saving || !data.accounts.length} className="px-3 py-1 hover:bg-surface-2 disabled:opacity-50">
+            Suggest
+          </button>
+          <select
+            aria-label="Auto balance"
+            title="Auto balance: re-run Suggest on a schedule and apply (max 3 moves, only when balance improves ≥10%)"
+            value={data.auto?.everyH || ""}
+            disabled={saving}
+            onChange={(e) => setAutoEvery(e.target.value ? Number(e.target.value) : null)}
+            className={`border-l border-border bg-transparent px-1 text-xs ${data.auto?.everyH ? "text-primary font-medium" : "text-text-muted"}`}
+          >
+            <option value="">Auto off</option>
+            {[1, 3, 6, 24].map((h) => <option key={h} value={h}>Auto {h}h</option>)}
+          </select>
+        </div>
       </div>
+
+      {data.auto?.last && (
+        <div className="text-xs text-text-muted mb-2 flex items-center gap-2 tabular-nums">
+          <span title={data.auto.last.moves.map((m) => `${keyName(m.keyId)}: ${nameOf(m.from)} → ${nameOf(m.to)}`).join("\n") || "No changes needed"}>
+            Auto {new Date(data.auto.last.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            {" · "}{data.auto.last.moves.length ? `${data.auto.last.moves.length} moved` : "no change"}
+            {data.auto.last.undone && " · undone"}
+            {data.auto.everyH && ` · next ${new Date(new Date(data.auto.last.at).getTime() + data.auto.everyH * 3600000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}
+          </span>
+          {data.auto.last.moves.length > 0 && !data.auto.last.undone && (
+            <button type="button" onClick={undoAuto} disabled={saving} className="underline hover:text-text-main">Undo</button>
+          )}
+        </div>
+      )}
 
       {data.fallback && (
         <p className="text-xs text-orange-500 mb-2">

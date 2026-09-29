@@ -23,3 +23,16 @@ export async function getKeyUsage(providerId, keys, connIds, now = Date.now()) {
   }
   return usage;
 }
+
+// { [keyId]: ms } of each key's latest request to this provider (last 24h)
+export async function getKeyLastUsed(providerId, keys, now = Date.now()) {
+  const db = await getAdapter();
+  const idByKey = new Map(keys.map((k) => [k.key, k.id]));
+  const rows = db.all(
+    `SELECT apiKey, MAX(timestamp) AS ts FROM usageHistory WHERE provider = ? AND timestamp >= ? AND apiKey IS NOT NULL GROUP BY apiKey`,
+    [providerId, new Date(now - DAY_MS).toISOString()]
+  );
+  const out = {};
+  for (const r of rows) { const id = idByKey.get(r.apiKey); if (id) out[id] = new Date(r.ts).getTime(); }
+  return out;
+}

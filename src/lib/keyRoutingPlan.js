@@ -10,6 +10,63 @@
 const STICKY = 0.01;
 const DAY_MS = 86400000;
 
+// Imbalance of an assignment: Σ load² / cap, normalized so a perfectly proportional split = 1.
+export function imbalance(assignment, loads, caps) {
+  const byAcc = {};
+  let total = 0, capSum = 0;
+  for (const [k, a] of Object.entries(assignment)) {
+    if (!a) continue; // unpinned keys use the whole pool, not one account
+    byAcc[a] = (byAcc[a] || 0) + (loads[k] || 0);
+    total += loads[k] || 0;
+  }
+  for (const c of Object.values(caps)) capSum += c;
+  if (!total || !capSum) return 1;
+  let s = 0;
+  for (const [a, l] of Object.entries(byAcc)) s += caps[a] > 0 ? (l * l) / caps[a] : (l > 0 ? Infinity : 0);
+  return s / ((total * total) / capSum);
+}
+
+/**
+ * Guardrails for unattended auto-balance. Returns the moves to apply (possibly none).
+ * - only when imbalance drops by ≥ minGain (relative)
+ * - skip keys used in the last `busyMs` (don't swap accounts mid-conversation)
+ * - at most `maxMoves`, biggest gain first
+ * @param changes [{ keyId, from, to }] from the planner
+ * @param loads   { keyId: load }  caps { accountId: cap }  pins { keyId: accountId }
+ * @param lastUsed { keyId: ms timestamp }
+ */
+export function limitMoves({ changes, loads, caps, pins, lastUsed = {}, now = Date.now(),
+  maxMoves = 3, minGain = 0.1, busyMs = 60000 }) {
+  const eligible = changes.filter((c) => !(lastUsed[c.keyId] && now - lastUsed[c.keyId] < busyMs));
+  const before = imbalance(pins, loads, caps);
+  const picked = [];
+  const cur = { ...pins };
+  // Greedy by marginal gain over the planner's own moves
+  let pool = [...eligible];
+  while (picked.length < maxMoves && pool.length) {
+    let best = null, bestScore = imbalance(cur, loads, caps);
+    for (const c of pool) {
+      const s = imbalance({ ...cur, [c.keyId]: c.to }, loads, caps);
+      if (s < bestScore - 1e-9) { best = c; bestScore = s; }
+    }
+    if (!best) break;
+    picked.push(best);
+    cur[best.keyId] = best.to;
+    pool = pool.filter((c) => c !== best);
+  }
+  const after = imbalance(cur, loads, caps);
+  // Load stuck on an exhausted account (before = ∞) always justifies the move
+  const worth = picked.length && (!Number.isFinite(before) ? Number.isFinite(after) || after < before : (before - after) / before >= minGain);
+  return worth ? { moves: picked, before, after } : { moves: [], before, after: before };
+}
+
+// Keys without history get the median observed load, so new keys still spread evenly
+export function effectiveLoads(loads) {
+  const observed = loads.filter((l) => l > 0);
+  const fill = observed.length ? median(observed) : 1;
+  return loads.map((l) => (l > 0 ? l : fill));
+}
+
 export function median(values) {
   if (!values.length) return 0;
   const s = [...values].sort((a, b) => a - b);
@@ -37,10 +94,7 @@ export function planKeyAssignment({ keys, accounts, pins = {} }) {
   if (caps.every((c) => c === 0)) caps = caps.map(() => 1);
   const n = accounts.length;
 
-  // Keys without history get the median observed load, so new keys still spread evenly
-  const observed = keys.map((k) => k.load).filter((l) => l > 0);
-  const fill = observed.length ? median(observed) : 1;
-  const L = keys.map((k) => (k.load > 0 ? k.load : fill));
+  const L = effectiveLoads(keys.map((k) => k.load));
   const pinIdx = keys.map((k) => accounts.findIndex((a) => a.id === pins[k.id]));
 
   const total = L.reduce((s, x) => s + x, 0);
