@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Modal, Button } from "@/shared/components";
-import { suggestKeyAssignment, sessionWeekly, timeLeft, timeToEmpty, median } from "./suggestKeyAssignment";
+import { sessionWeekly, timeLeft, timeToEmpty } from "./quotaWindows";
+import { median } from "@/lib/keyRoutingPlan.js";
 
 const UNASSIGNED = "";
 const LOW_QUOTA = 20;
@@ -11,51 +12,43 @@ const HEAVY_X = 2; // key is "heavy" above HEAVY_X × team median
 const fmt = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(Math.round(n || 0)));
 const quotaColor = (r) => (r < LOW_QUOTA ? "#ef4444" : r < 50 ? "#f59e0b" : "#22c55e");
 
-// Outer ring = session, inner = weekly. Center = runway: at the current burn pace, how long until
-// the first window empties — shown only when that happens before its reset, else ✓.
-function QuotaRings({ windows: list, now }) {
-  const size = 56, stroke = 5, gap = 2;
-  const soonest = list.map((w) => ({ w, empty: timeToEmpty(w, now) })).filter((x) => x.empty != null)
-    .sort((a, b) => a.empty - b.empty)[0];
-  const centerTitle = soonest
-    ? `${soonest.w.name} runs out in ~${timeLeft(now + soonest.empty, now)} at current pace, before its reset`
-    : "On pace: no window runs out before it resets";
+// Half-circle gauge. Arc = weekly % left; ● on the arc = how far the week has elapsed
+// (arc end left of ● → burning faster than the week allows). Big number = session % left.
+// One line below: session reset countdown; swaps to red "⚠ wk …" when weekly runs out before its reset.
+function QuotaGauge({ windows, now }) {
+  const session = windows.find((w) => w.name === "session");
+  const weekly = windows.find((w) => w.name === "weekly");
+  const W = 88, r = 38, stroke = 7, cy = 44;
+  const arc = `M ${W / 2 - r} ${cy} A ${r} ${r} 0 0 1 ${W / 2 + r} ${cy}`;
+  // Fraction of the weekly window still ahead → dot sits at (1 − elapsed) along the "remaining" scale
+  const weekLeft = weekly?.resetAt ? Math.min(1, Math.max(0, (new Date(weekly.resetAt) - now) / weekly.windowMs)) : null;
+  const dot = weekLeft != null ? (() => {
+    const t = Math.PI * (1 - weekLeft); // 0 = left end, π = right end
+    return { x: W / 2 - r * Math.cos(t), y: cy - r * Math.sin(t) };
+  })() : null;
+  const weeklyEmpty = weekly ? timeToEmpty(weekly, now) : null;
+  const tip = windows.map((w) => `${w.name}: ${Math.round(w.remaining)}% left${w.resetAt ? `, resets in ${timeLeft(w.resetAt, now)} (${new Date(w.resetAt).toLocaleString()})` : ""}`).join("\n")
+    + (weeklyEmpty != null ? `\nweekly runs out in ~${timeLeft(now + weeklyEmpty, now)} at current pace` : "");
   return (
-    <div className="flex items-center gap-3">
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img"
-        aria-label={list.map((w) => `${w.name} ${Math.round(w.remaining)}% left`).join(", ")}>
-        {list.map((w, i) => {
-          const r = size / 2 - stroke / 2 - i * (stroke + gap);
-          const c = 2 * Math.PI * r;
-          return (
-            <g key={w.name} transform={`rotate(-90 ${size / 2} ${size / 2})`}>
-              <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="currentColor" strokeOpacity="0.12" strokeWidth={stroke} />
-              <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={quotaColor(w.remaining)} strokeWidth={stroke}
-                strokeLinecap="round" strokeDasharray={`${(c * Math.max(0, w.remaining)) / 100} ${c}`}>
-                <title>{`${w.name}: ${Math.round(w.remaining)}% left${w.resetAt ? ` · resets ${new Date(w.resetAt).toLocaleString()}` : ""}`}</title>
-              </circle>
-            </g>
-          );
-        })}
-        <text x="50%" y="50%" dominantBaseline="central" textAnchor="middle" fontSize={soonest ? 11 : 14} fontWeight="600"
-          fill={soonest ? "#ef4444" : "#22c55e"}>
-          <title>{centerTitle}</title>
-          {soonest ? `~${timeLeft(now + soonest.empty, now).split(" ")[0]}` : "✓"}
-        </text>
+    <div className="flex flex-col items-center w-fit" title={tip}>
+      <svg width={W} height={cy + stroke / 2 + 1} viewBox={`0 0 ${W} ${cy + stroke / 2 + 1}`} role="img" aria-label={tip}>
+        <path d={arc} fill="none" stroke="currentColor" strokeOpacity="0.12" strokeWidth={stroke} strokeLinecap="round" />
+        {weekly && (
+          <path d={arc} fill="none" stroke={quotaColor(weekly.remaining)} strokeWidth={stroke} strokeLinecap="round"
+            pathLength="100" strokeDasharray={`${Math.max(0, weekly.remaining)} 100`} />
+        )}
+        {dot && <circle cx={dot.x} cy={dot.y} r={stroke / 2 + 1} className="fill-text-main" stroke="var(--color-surface, #fff)" strokeWidth="1.5" />}
+        {session && (
+          <text x={W / 2} y={cy - 4} textAnchor="middle" fontSize="16" fontWeight="700" fill={quotaColor(session.remaining)}>
+            {Math.round(session.remaining)}%
+          </text>
+        )}
       </svg>
-      <ul className="text-xs text-text-muted space-y-1 flex-1 min-w-0">
-        {list.map((w) => (
-          <li key={w.name} className="flex items-center gap-1 whitespace-nowrap">
-            <span className="capitalize">{w.name}</span>
-            <span className="tabular-nums font-medium" style={{ color: quotaColor(w.remaining) }}>{Math.round(w.remaining)}%</span>
-            {w.resetAt && (
-              <span className="ml-auto tabular-nums" title={`Resets ${new Date(w.resetAt).toLocaleString()}`}>
-                ⟳ {timeLeft(w.resetAt, now)}
-              </span>
-            )}
-          </li>
-        ))}
-      </ul>
+      <div className="text-[11px] tabular-nums leading-tight">
+        {weeklyEmpty != null
+          ? <span className="text-red-500">⚠ wk {timeLeft(weekly.resetAt, now)}</span>
+          : session?.resetAt ? <span className="text-text-muted">⟳ {timeLeft(session.resetAt, now)}</span> : null}
+      </div>
     </div>
   );
 }
@@ -145,17 +138,21 @@ export default function KeyAccessModal({ isOpen, onClose, providerId }) {
     if (!res.ok) throw new Error((await res.json()).error || "Save failed");
   });
 
-  const suggest = () => {
-    const accounts = data.accounts.filter((a) => a.isActive)
-      .map((a) => ({ id: a.id, remaining: quota[a.id]?.remaining ?? null }));
-    setSuggestion(suggestKeyAssignment(activeKeys.map((k) => ({ id: k.id, load: tokensOf(k.id) })), accounts));
+  // Plan computed server-side: 24h key load × weekly quota left per account
+  const suggest = async () => {
+    setSaving(true); setError("");
+    try {
+      const res = await fetch(`/api/providers/${providerId}/key-routing/suggest`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Suggest failed");
+      setSuggestion(json);
+    } catch (e) { setError(e.message); }
+    finally { setSaving(false); }
   };
 
-  const changes = suggestion
-    ? Object.entries(suggestion).filter(([kid, cid]) => data.keys.find((k) => k.id === kid)?.pinned !== cid)
-    : [];
+  const changes = suggestion?.changes || [];
   const applySuggestion = () => run(async () => {
-    for (const [kid, cid] of changes) await putPin(kid, cid);
+    for (const c of changes) await putPin(c.keyId, c.to);
     setSuggestion(null);
   });
 
@@ -206,11 +203,19 @@ export default function KeyAccessModal({ isOpen, onClose, providerId }) {
 
       {suggestion && (
         <div className="mb-3 rounded-lg border border-border p-3 text-sm">
+          <p className="text-xs text-text-muted mb-2">Based on last-24h key usage and each account&apos;s weekly quota left.</p>
+          <ul className="mb-2 text-xs space-y-0.5">
+            {suggestion.accounts.map((a) => (
+              <li key={a.id} className="tabular-nums">
+                {nameOf(a.id)}: {a.keys} key(s), carries {Math.round(a.loadShare * 100)}% of load (target {Math.round(a.targetShare * 100)}%)
+              </li>
+            ))}
+          </ul>
           {changes.length === 0 ? <p>Current assignment is already balanced.</p> : (
             <ul className="mb-2 space-y-1">
-              {changes.map(([kid, cid]) => {
-                const k = data.keys.find((x) => x.id === kid);
-                return <li key={kid}><b>{k.name}</b> ({fmt(tokensOf(kid))} tok): {nameOf(k.pinned)} → {nameOf(cid)}</li>;
+              {changes.map((c) => {
+                const k = data.keys.find((x) => x.id === c.keyId);
+                return <li key={c.keyId}><b>{k?.name || c.keyId.slice(0, 8)}</b>: {nameOf(c.from)} → {nameOf(c.to)}</li>;
               })}
             </ul>
           )}
@@ -245,7 +250,7 @@ export default function KeyAccessModal({ isOpen, onClose, providerId }) {
                 <div className="mb-3">
                   {q === undefined ? <div className="text-xs text-text-muted">Loading quota…</div>
                     : q.windows.length === 0 ? <div className="text-xs text-text-muted">Quota n/a</div>
-                    : <QuotaRings windows={q.windows} now={now} />}
+                    : <QuotaGauge windows={q.windows} now={now} />}
                 </div>
               )}
               <div className="flex flex-col gap-1.5">

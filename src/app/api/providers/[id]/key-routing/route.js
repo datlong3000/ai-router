@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
 import { getApiKeys, getKeyAccounts, getProviderConnections, getSettings, updateSettings } from "@/lib/localDb";
-import { getAdapter } from "@/lib/db/driver.js";
+import { getKeyUsage, PERIOD_MS } from "@/lib/keyRoutingUsage.js";
 
 export const dynamic = "force-dynamic";
-
-const PERIOD_MS = { "24h": 86400000, "7d": 604800000 };
 
 function mask(key) {
   return key && key.length > 12 ? key.slice(0, 8) + "***" + key.slice(-4) : "***";
@@ -18,26 +16,10 @@ export async function GET(request, { params }) {
     const period = new URL(request.url).searchParams.get("period") === "24h" ? "24h" : "7d";
     const since = new Date(Date.now() - PERIOD_MS[period]).toISOString();
 
-    const [keys, connections, db, settings] = await Promise.all([
-      getApiKeys(), getProviderConnections({ provider: providerId }), getAdapter(), getSettings(),
+    const [keys, connections, settings] = await Promise.all([
+      getApiKeys(), getProviderConnections({ provider: providerId }), getSettings(),
     ]);
-    const connIds = new Set(connections.map((c) => c.id));
-    const idByKey = new Map(keys.map((k) => [k.key, k.id]));
-
-    const rows = db.all(
-      `SELECT apiKey, connectionId, COUNT(*) AS req, SUM(promptTokens + completionTokens) AS tokens, SUM(cost) AS cost
-       FROM usageHistory WHERE provider = ? AND timestamp >= ? AND apiKey IS NOT NULL
-       GROUP BY apiKey, connectionId`,
-      [providerId, since]
-    );
-    const usage = {};
-    for (const r of rows) {
-      const keyId = idByKey.get(r.apiKey);
-      if (!keyId) continue;
-      const u = (usage[keyId] ||= { req: 0, tokens: 0, cost: 0, byAccount: {} });
-      u.req += r.req; u.tokens += r.tokens || 0; u.cost += r.cost || 0;
-      if (connIds.has(r.connectionId)) u.byAccount[r.connectionId] = { req: r.req, tokens: r.tokens || 0 };
-    }
+    const usage = await getKeyUsage(providerId, since, keys, new Set(connections.map((c) => c.id)));
 
     const out = await Promise.all(keys.map(async (k) => ({
       id: k.id, name: k.name, masked: mask(k.key), isActive: k.isActive,
