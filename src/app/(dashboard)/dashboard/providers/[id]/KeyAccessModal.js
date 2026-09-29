@@ -14,7 +14,7 @@ const quotaColor = (r) => (r < LOW_QUOTA ? "#ef4444" : r < 50 ? "#f59e0b" : "#22
 
 // Half-circle gauge. Arc = weekly % left; ● on the arc = how far the week has elapsed
 // (arc end left of ● → burning faster than the week allows). Big number = session % left.
-// One line below: session reset countdown; swaps to red "⚠ wk …" when weekly runs out before its reset.
+// One line below: session reset countdown, plus ⚠ when weekly runs out before its reset (details in tooltip).
 function QuotaGauge({ windows, now }) {
   const session = windows.find((w) => w.name === "session");
   const weekly = windows.find((w) => w.name === "weekly");
@@ -57,9 +57,8 @@ function QuotaGauge({ windows, now }) {
         )}
       </svg>
       <div className="text-[11px] tabular-nums leading-tight">
-        {weeklyEmpty != null
-          ? <span className="text-red-500">⚠ wk {timeLeft(weekly.resetAt, now)}</span>
-          : session?.resetAt ? <span className="text-text-muted">⟳ {timeLeft(session.resetAt, now)}</span> : null}
+        {session?.resetAt && <span className="text-text-muted">⟳ {timeLeft(session.resetAt, now)}</span>}
+        {weeklyEmpty != null && <span className="text-red-500 ml-1" aria-label="weekly runs out before reset">⚠</span>}
       </div>
     </div>
     </Tooltip>
