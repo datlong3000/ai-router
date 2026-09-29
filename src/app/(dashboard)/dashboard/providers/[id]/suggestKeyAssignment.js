@@ -56,6 +56,18 @@ export function sessionWeekly(quotas) {
   return out;
 }
 
+// ms until the window hits 0% at its average burn pace so far, only if that lands before resetAt; else null.
+// Pace = % used / time elapsed in the window (window start = resetAt − windowMs).
+export function timeToEmpty(w, now = Date.now()) {
+  const resetMs = new Date(w?.resetAt).getTime();
+  if (!Number.isFinite(resetMs) || !w.windowMs) return null;
+  const elapsed = w.windowMs - (resetMs - now);
+  const used = 100 - w.remaining;
+  if (elapsed <= 0 || used <= 0) return null;
+  const empty = w.remaining / (used / elapsed);
+  return empty < resetMs - now ? empty : null;
+}
+
 // "2h 13m" / "3d 4h" until resetAt, or null
 export function timeLeft(resetAt, now = Date.now()) {
   const ms = new Date(resetAt).getTime() - now;

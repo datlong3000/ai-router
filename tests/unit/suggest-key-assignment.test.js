@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { suggestKeyAssignment, minRemaining, median, sessionWeekly, timeLeft } from "../../src/app/(dashboard)/dashboard/providers/[id]/suggestKeyAssignment.js";
+import { suggestKeyAssignment, minRemaining, median, sessionWeekly, timeLeft, timeToEmpty } from "../../src/app/(dashboard)/dashboard/providers/[id]/suggestKeyAssignment.js";
 
 describe("suggestKeyAssignment", () => {
   it("balances 12 keys across 3 accounts and favors headroom", () => {
@@ -41,5 +41,14 @@ describe("suggestKeyAssignment", () => {
     expect(timeLeft(new Date((3 * 24 + 4) * 3600000).toISOString(), now)).toBe('3d 4h');
     expect(timeLeft(new Date(0).toISOString(), 1)).toBe('now');
     expect(timeLeft('garbage', now)).toBeNull();
+  });
+  it('timeToEmpty: runway only when window empties before reset', () => {
+    const H = 3600000, W = 5 * H;
+    // 1h into 5h window, 50% used → empties in 1h, reset in 4h → 1h
+    expect(timeToEmpty({ remaining: 50, resetAt: new Date(4 * H).toISOString(), windowMs: W }, 0)).toBe(H);
+    // 4h in, 20% used → pace too slow to empty before reset
+    expect(timeToEmpty({ remaining: 80, resetAt: new Date(H).toISOString(), windowMs: W }, 0)).toBeNull();
+    expect(timeToEmpty({ remaining: 100, resetAt: new Date(H).toISOString(), windowMs: W }, 0)).toBeNull();
+    expect(timeToEmpty({ remaining: 50, resetAt: null, windowMs: W }, 0)).toBeNull();
   });
 });

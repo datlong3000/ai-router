@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Modal, Button } from "@/shared/components";
-import { suggestKeyAssignment, sessionWeekly, timeLeft, median } from "./suggestKeyAssignment";
+import { suggestKeyAssignment, sessionWeekly, timeLeft, timeToEmpty, median } from "./suggestKeyAssignment";
 
 const UNASSIGNED = "";
 const LOW_QUOTA = 20;
@@ -11,10 +11,15 @@ const HEAVY_X = 2; // key is "heavy" above HEAVY_X × team median
 const fmt = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(Math.round(n || 0)));
 const quotaColor = (r) => (r < LOW_QUOTA ? "#ef4444" : r < 50 ? "#f59e0b" : "#22c55e");
 
-// Outer ring = session, inner = weekly; lowest % in the center. Each row: % left + time until reset.
+// Outer ring = session, inner = weekly. Center = runway: at the current burn pace, how long until
+// the first window empties — shown only when that happens before its reset, else ✓.
 function QuotaRings({ windows: list, now }) {
   const size = 56, stroke = 5, gap = 2;
-  const low = Math.min(...list.map((w) => w.remaining));
+  const soonest = list.map((w) => ({ w, empty: timeToEmpty(w, now) })).filter((x) => x.empty != null)
+    .sort((a, b) => a.empty - b.empty)[0];
+  const centerTitle = soonest
+    ? `${soonest.w.name} runs out in ~${timeLeft(now + soonest.empty, now)} at current pace, before its reset`
+    : "On pace: no window runs out before it resets";
   return (
     <div className="flex items-center gap-3">
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img"
@@ -32,36 +37,24 @@ function QuotaRings({ windows: list, now }) {
             </g>
           );
         })}
-        <text x="50%" y="50%" dominantBaseline="central" textAnchor="middle" fontSize="12" fontWeight="600" fill={quotaColor(low)}>
-          {Math.round(low)}%
+        <text x="50%" y="50%" dominantBaseline="central" textAnchor="middle" fontSize={soonest ? 11 : 14} fontWeight="600"
+          fill={soonest ? "#ef4444" : "#22c55e"}>
+          <title>{centerTitle}</title>
+          {soonest ? `~${timeLeft(now + soonest.empty, now).split(" ")[0]}` : "✓"}
         </text>
       </svg>
-      <ul className="text-xs text-text-muted space-y-1.5 flex-1 min-w-0">
-        {list.map((w) => {
-          const left = w.resetAt ? timeLeft(w.resetAt, now) : null;
-          // Share of the window still to go before reset (full bar = just reset)
-          const togo = w.resetAt ? Math.min(1, Math.max(0, (new Date(w.resetAt) - now) / w.windowMs)) : null;
-          return (
-            <li key={w.name}>
-              <div className="flex items-center gap-1">
-                <span className="inline-block size-2 rounded-full" style={{ background: quotaColor(w.remaining) }} />
-                <span className="capitalize">{w.name}</span>
-                <span className="tabular-nums font-medium" style={{ color: quotaColor(w.remaining) }}>{Math.round(w.remaining)}%</span>
-                {left && (
-                  <span className="ml-auto tabular-nums" title={`Resets ${new Date(w.resetAt).toLocaleString()}`}>
-                    ⟳ {left}
-                  </span>
-                )}
-              </div>
-              {togo != null && (
-                <div className="h-0.5 mt-0.5 rounded bg-border overflow-hidden" role="progressbar" aria-label={`${w.name} time until reset`}
-                  aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(togo * 100)}>
-                  <div className="h-full bg-text-muted" style={{ width: `${togo * 100}%` }} />
-                </div>
-              )}
-            </li>
-          );
-        })}
+      <ul className="text-xs text-text-muted space-y-1 flex-1 min-w-0">
+        {list.map((w) => (
+          <li key={w.name} className="flex items-center gap-1 whitespace-nowrap">
+            <span className="capitalize">{w.name}</span>
+            <span className="tabular-nums font-medium" style={{ color: quotaColor(w.remaining) }}>{Math.round(w.remaining)}%</span>
+            {w.resetAt && (
+              <span className="ml-auto tabular-nums" title={`Resets ${new Date(w.resetAt).toLocaleString()}`}>
+                ⟳ {timeLeft(w.resetAt, now)}
+              </span>
+            )}
+          </li>
+        ))}
       </ul>
     </div>
   );
