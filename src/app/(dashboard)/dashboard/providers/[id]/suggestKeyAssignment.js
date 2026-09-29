@@ -35,21 +35,34 @@ export function windowRemaining(q) {
   return q.total && q.total !== 100 ? (q.remaining / q.total) * 100 : q.remaining;
 }
 
-// One ring per model: "MiniMax-M2 (5h)" + "MiniMax-M2 (7d)" → { name:"MiniMax-M2", remaining:min, windows:[...] }.
-// Keys without a "(window)" suffix (session/weekly…) stay one group each.
-export function groupQuotaByModel(quotas) {
-  const groups = new Map();
-  for (const [key, q] of Object.entries(quotas || {})) {
-    const remaining = windowRemaining(q);
-    if (remaining == null) continue;
-    const m = key.match(/^(.*?)\s*\(([^)]+)\)$/);
-    const name = m ? m[1] : key;
-    const g = groups.get(name) || { name, remaining: 100, resetAt: null, windows: [] };
-    g.windows.push({ label: m ? m[2] : key, remaining, resetAt: q.resetAt || null });
-    if (remaining <= g.remaining) { g.remaining = remaining; g.resetAt = q.resetAt || null; }
-    groups.set(name, g);
+const WINDOWS = [
+  { name: "session", match: /session|\(5h\)/i, ms: 5 * 3600000 },
+  { name: "weekly", match: /weekly|\(7d\)/i, ms: 7 * 86400000 },
+];
+
+// Collapse any provider's quotas into just session (5h) + weekly (7d), lowest remaining wins per bucket.
+// MiniMax "<model> (5h|7d)" folds in too. Other windows (review, opus-only, …) are dropped.
+export function sessionWeekly(quotas) {
+  const out = [];
+  for (const w of WINDOWS) {
+    let best = null;
+    for (const [key, q] of Object.entries(quotas || {})) {
+      if (!w.match.test(key)) continue;
+      const remaining = windowRemaining(q);
+      if (remaining != null && (!best || remaining < best.remaining)) best = { name: w.name, remaining, resetAt: q.resetAt || null, windowMs: w.ms };
+    }
+    if (best) out.push(best);
   }
-  return [...groups.values()].sort((a, b) => a.remaining - b.remaining);
+  return out;
+}
+
+// "2h 13m" / "3d 4h" until resetAt, or null
+export function timeLeft(resetAt, now = Date.now()) {
+  const ms = new Date(resetAt).getTime() - now;
+  if (!Number.isFinite(ms)) return null;
+  if (ms <= 0) return "now";
+  const m = Math.floor(ms / 60000), h = Math.floor(m / 60), d = Math.floor(h / 24);
+  return d ? `${d}d ${h % 24}h` : h ? `${h}h ${m % 60}m` : `${m}m`;
 }
 
 // Lowest remaining % across a /api/usage/[connectionId] quotas object, or null if none.

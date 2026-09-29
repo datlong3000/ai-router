@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Modal, Button } from "@/shared/components";
-import { suggestKeyAssignment, minRemaining, groupQuotaByModel, median } from "./suggestKeyAssignment";
+import { suggestKeyAssignment, sessionWeekly, timeLeft, median } from "./suggestKeyAssignment";
 
 const UNASSIGNED = "";
 const LOW_QUOTA = 20;
@@ -10,18 +10,15 @@ const HEAVY_X = 2; // key is "heavy" above HEAVY_X × team median
 
 const fmt = (n) => (n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(Math.round(n || 0)));
 const quotaColor = (r) => (r < LOW_QUOTA ? "#ef4444" : r < 50 ? "#f59e0b" : "#22c55e");
-const label = (k) => k.replace(/_/g, " ");
-const windowText = (g) => g.windows.map((w) => `${label(w.label)} ${Math.round(w.remaining)}%`).join(" · ");
 
-// Concentric rings, one per model (value = lowest of its 5h/7d windows), lowest % in the center
-function QuotaRings({ groups }) {
-  const size = 64, stroke = 5, gap = 2;
-  const list = groups.slice(0, 4); // already sorted lowest-first
-  const low = list[0].remaining;
+// Outer ring = session, inner = weekly; lowest % in the center. Each row: % left + time until reset.
+function QuotaRings({ windows: list, now }) {
+  const size = 56, stroke = 5, gap = 2;
+  const low = Math.min(...list.map((w) => w.remaining));
   return (
     <div className="flex items-center gap-3">
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img"
-        aria-label={list.map((w) => `${w.name}: ${windowText(w)}`).join(", ")}>
+        aria-label={list.map((w) => `${w.name} ${Math.round(w.remaining)}% left`).join(", ")}>
         {list.map((w, i) => {
           const r = size / 2 - stroke / 2 - i * (stroke + gap);
           const c = 2 * Math.PI * r;
@@ -30,7 +27,7 @@ function QuotaRings({ groups }) {
               <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="currentColor" strokeOpacity="0.12" strokeWidth={stroke} />
               <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={quotaColor(w.remaining)} strokeWidth={stroke}
                 strokeLinecap="round" strokeDasharray={`${(c * Math.max(0, w.remaining)) / 100} ${c}`}>
-                <title>{`${w.name}: ${windowText(w)}${w.resetAt ? ` · resets ${new Date(w.resetAt).toLocaleString()}` : ""}`}</title>
+                <title>{`${w.name}: ${Math.round(w.remaining)}% left${w.resetAt ? ` · resets ${new Date(w.resetAt).toLocaleString()}` : ""}`}</title>
               </circle>
             </g>
           );
@@ -39,15 +36,32 @@ function QuotaRings({ groups }) {
           {Math.round(low)}%
         </text>
       </svg>
-      <ul className="text-xs text-text-muted space-y-0.5">
-        {list.map((w) => (
-          <li key={w.name} className="flex items-center gap-1">
-            <span className="inline-block size-2 rounded-full" style={{ background: quotaColor(w.remaining) }} />
-            <span className="truncate max-w-28" title={windowText(w)}>{label(w.name)}</span>
-            <span className="tabular-nums">{Math.round(w.remaining)}%</span>
-            {w.windows.length > 1 && <span className="opacity-70">({w.windows.map((x) => label(x.label)).join("/")})</span>}
-          </li>
-        ))}
+      <ul className="text-xs text-text-muted space-y-1.5 flex-1 min-w-0">
+        {list.map((w) => {
+          const left = w.resetAt ? timeLeft(w.resetAt, now) : null;
+          // Share of the window still to go before reset (full bar = just reset)
+          const togo = w.resetAt ? Math.min(1, Math.max(0, (new Date(w.resetAt) - now) / w.windowMs)) : null;
+          return (
+            <li key={w.name}>
+              <div className="flex items-center gap-1">
+                <span className="inline-block size-2 rounded-full" style={{ background: quotaColor(w.remaining) }} />
+                <span className="capitalize">{w.name}</span>
+                <span className="tabular-nums font-medium" style={{ color: quotaColor(w.remaining) }}>{Math.round(w.remaining)}%</span>
+                {left && (
+                  <span className="ml-auto tabular-nums" title={`Resets ${new Date(w.resetAt).toLocaleString()}`}>
+                    ⟳ {left}
+                  </span>
+                )}
+              </div>
+              {togo != null && (
+                <div className="h-0.5 mt-0.5 rounded bg-border overflow-hidden" role="progressbar" aria-label={`${w.name} time until reset`}
+                  aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(togo * 100)}>
+                  <div className="h-full bg-text-muted" style={{ width: `${togo * 100}%` }} />
+                </div>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
@@ -57,10 +71,18 @@ function QuotaRings({ groups }) {
 export default function KeyAccessModal({ isOpen, onClose, providerId }) {
   const [period, setPeriod] = useState("7d");
   const [data, setData] = useState({ keys: [], accounts: [], usage: {}, fallback: false });
-  const [quota, setQuota] = useState({}); // connId -> { groups: [{name, remaining, resetAt, windows}], remaining }
+  const [quota, setQuota] = useState({}); // connId -> { windows: [{name:"session"|"weekly", remaining, resetAt, windowMs}], remaining }
   const [suggestion, setSuggestion] = useState(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+
+  // Tick reset countdowns once a minute while open
+  useEffect(() => {
+    if (!isOpen) return;
+    const t = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(t);
+  }, [isOpen]);
 
   const load = useCallback(async () => {
     try {
@@ -84,8 +106,9 @@ export default function KeyAccessModal({ isOpen, onClose, providerId }) {
     for (const a of data.accounts) {
       fetch(`/api/usage/${a.id}`).then((r) => r.json()).then((u) => {
         if (cancelled) return;
-        setQuota((q) => ({ ...q, [a.id]: { groups: groupQuotaByModel(u?.quotas), remaining: minRemaining(u?.quotas) } }));
-      }).catch(() => !cancelled && setQuota((q) => ({ ...q, [a.id]: { groups: [], remaining: null } })));
+        const windows = sessionWeekly(u?.quotas);
+        setQuota((q) => ({ ...q, [a.id]: { windows, remaining: windows.length ? Math.min(...windows.map((w) => w.remaining)) : null } }));
+      }).catch(() => !cancelled && setQuota((q) => ({ ...q, [a.id]: { windows: [], remaining: null } })));
     }
     return () => { cancelled = true; };
   }, [isOpen, data.accounts]);
@@ -228,8 +251,8 @@ export default function KeyAccessModal({ isOpen, onClose, providerId }) {
               {zone.id && (
                 <div className="mb-3">
                   {q === undefined ? <div className="text-xs text-text-muted">Loading quota…</div>
-                    : q.groups.length === 0 ? <div className="text-xs text-text-muted">Quota n/a</div>
-                    : <QuotaRings groups={q.groups} />}
+                    : q.windows.length === 0 ? <div className="text-xs text-text-muted">Quota n/a</div>
+                    : <QuotaRings windows={q.windows} now={now} />}
                 </div>
               )}
               <div className="flex flex-col gap-1.5">
