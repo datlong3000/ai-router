@@ -17,7 +17,8 @@ export async function resolveKeyAccount({ apiKey, provider, strict = false }) {
   const accounts = await getKeyAccounts(key.id);
   const providerId = resolveProviderId(provider);
   if (accounts[providerId]) return { mode: "pinned", connectionId: accounts[providerId] };
-  if (Object.keys(accounts).length > 0 || strict) {
+  // Pins are per provider: a key pinned for provider X still uses the pool for unpinned Y (strict mode rejects)
+  if (strict) {
     return { mode: "reject", status: 403, message: `API key not assigned to an account for provider ${providerId}` };
   }
   return { mode: "pool" };

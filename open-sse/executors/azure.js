@@ -20,6 +20,8 @@ export class AzureExecutor extends DefaultExecutor {
       || "gpt-4";
 
     const endpoint = azureEndpoint.replace(/\/$/, "");
+    // Azure v1 API (".../openai/v1"): OpenAI-style path, deployment goes in body.model, no api-version
+    if (/\/openai\/v1$/.test(endpoint)) return `${endpoint}/chat/completions`;
     return `${endpoint}/openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`;
   }
 
@@ -52,6 +54,10 @@ export class AzureExecutor extends DefaultExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
+    const deployment = credentials?.providerSpecificData?.deployment;
+    if (deployment && /\/openai\/v1\/?$/.test(credentials?.providerSpecificData?.azureEndpoint || "")) {
+      return { ...body, model: deployment };
+    }
     return body;
   }
 }
