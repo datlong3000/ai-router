@@ -1136,7 +1136,7 @@ export default function APIPageClient({ machineId }) {
         {accountsModal && (
           <div className="flex flex-col gap-3">
             <p className="text-sm text-text-muted">
-              Pin one account per provider. Once any account is pinned, this key can only use pinned providers — no fallback to other accounts.
+              Pin one account per provider. A pinned provider only uses that account — no fallback to other accounts. Unpinned providers use the normal pool (blocked in strict mode).
             </p>
             {[...new Set(accountsModal.connections.map((c) => c.provider))].sort().map((provider) => (
               <label key={provider} className="flex items-center justify-between gap-3 text-sm">

@@ -101,12 +101,12 @@ describe("keyAccountRouting", () => {
     expect(coreCalls).toEqual([]);
   });
 
-  it("6. mapping exists but other provider requested → 403", async () => {
-    const s = await scope(keyA1.key, "anthropic");
-    expect(s.reject.status).toBe(403);
+  it("6. mapping exists but other provider requested → pool (strict → 403)", async () => {
+    expect((await scope(keyA1.key, "anthropic")).allowedConnectionIds).toBeNull();
     const res = await chat.handleChat(req(keyA1.key, "anthropic/claude-sonnet-4"));
-    expect(res.status).toBe(403);
-    expect(coreCalls).toEqual([]);
+    expect(res.status).not.toBe(403);
+    expect(coreCalls).toEqual([accOther.id]);
+    expect((await scope(keyA1.key, "anthropic", true)).reject.status).toBe(403);
   });
 
   it("7. strict off + no mapping → pool; strict on + no mapping → 403", async () => {
