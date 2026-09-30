@@ -21,4 +21,11 @@ describe("AzureExecutor endpoint styles", () => {
     expect(e.transformRequest("m", { max_completion_tokens: 9 }, false, psd("https://r.openai.azure.com")))
       .toEqual({ max_completion_tokens: 9 });
   });
+  it("tools + reasoning → reasoning dropped; no tools → reasoning kept", () => {
+    const tools = [{ type: "function", function: { name: "f" } }];
+    expect(e.transformRequest("m", { tools, reasoning_effort: "high", reasoning: { effort: "high" } }, false, psd("https://r.openai.azure.com")))
+      .toEqual({ tools });
+    expect(e.transformRequest("m", { reasoning_effort: "high" }, false, psd("https://r.openai.azure.com")))
+      .toEqual({ reasoning_effort: "high" });
+  });
 });

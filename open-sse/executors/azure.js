@@ -60,6 +60,12 @@ export class AzureExecutor extends DefaultExecutor {
       const { max_tokens, ...rest } = body;
       body = { max_completion_tokens: max_tokens, ...rest };
     }
+    // gpt-5.x on /chat/completions rejects function tools + reasoning_effort (400) — drop reasoning when tools are sent.
+    // ponytail: tools requests lose reasoning; upgrade = route tools+reasoning requests to Azure /responses.
+    if (body.tools?.length && (body.reasoning_effort !== undefined || body.reasoning !== undefined)) {
+      const { reasoning_effort, reasoning, ...rest } = body;
+      body = rest;
+    }
     const deployment = credentials?.providerSpecificData?.deployment;
     if (deployment && /\/openai\/v1\/?$/.test(credentials?.providerSpecificData?.azureEndpoint || "")) {
       return { ...body, model: deployment };
