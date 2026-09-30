@@ -54,6 +54,12 @@ export class AzureExecutor extends DefaultExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
+    // Reasoning models (gpt-5+, o-series) reject max_tokens; deployment names don't reveal the model,
+    // so always send max_completion_tokens (accepted by all models since api-version 2024-09-01-preview)
+    if (body.max_tokens !== undefined) {
+      const { max_tokens, ...rest } = body;
+      body = { max_completion_tokens: max_tokens, ...rest };
+    }
     const deployment = credentials?.providerSpecificData?.deployment;
     if (deployment && /\/openai\/v1\/?$/.test(credentials?.providerSpecificData?.azureEndpoint || "")) {
       return { ...body, model: deployment };

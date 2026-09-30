@@ -15,4 +15,10 @@ describe("AzureExecutor endpoint styles", () => {
       .toBe("https://r.openai.azure.com/openai/v1/chat/completions");
     expect(e.transformRequest("m", { model: "m" }, false, psd("https://r.openai.azure.com/openai/v1"))).toEqual({ model: "dep-1" });
   });
+  it("max_tokens → max_completion_tokens (reasoning models reject max_tokens)", () => {
+    expect(e.transformRequest("m", { model: "m", max_tokens: 50 }, false, psd("https://r.openai.azure.com")))
+      .toEqual({ model: "m", max_completion_tokens: 50 });
+    expect(e.transformRequest("m", { max_completion_tokens: 9 }, false, psd("https://r.openai.azure.com")))
+      .toEqual({ max_completion_tokens: 9 });
+  });
 });
